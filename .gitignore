@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Build output
+client/dist/
+
+# Environment — NEVER commit real secrets
+.env
+
+# Uploaded Excel files
+data/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
