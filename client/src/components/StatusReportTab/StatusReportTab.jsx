@@ -239,7 +239,29 @@ export function StatusReportTab({ enabled }) {
       {/* ── Error ── */}
       {isError && (
         <Alert severity="error" sx={{ mb: 2, fontSize: '0.82rem' }}>
-          {error?.message || 'Failed to load status report. Check the server connection.'}
+          {(() => {
+            const msg = error?.message || '';
+            if (msg.includes('Cannot reach DB2') || msg.includes('SQLSTATE=08001') || msg.includes('SQL30081N')) {
+              return (
+                <>
+                  <strong>DB2 server unreachable.</strong> The server could not connect to the DB2
+                  database. This is usually a network or firewall issue — the DB2 host is not
+                  accessible from this machine.
+                  <br />
+                  <span style={{ opacity: 0.75 }}>{msg}</span>
+                </>
+              );
+            }
+            if (msg.includes('timeout') || msg.includes('Timeout')) {
+              return (
+                <>
+                  <strong>Request timed out.</strong> The Status Report query is taking too long.
+                  Try again — if it keeps failing, check that the DB2 server is responding.
+                </>
+              );
+            }
+            return msg || 'Failed to load status report. Check the server connection.';
+          })()}
         </Alert>
       )}
 

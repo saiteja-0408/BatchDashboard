@@ -172,7 +172,26 @@ async function queryDb2(sql, params = []) {
     throw cfgErr;
   }
 
-  const conn = await ibm_db.open(connStr);
+  let conn;
+  try {
+    conn = await ibm_db.open(connStr);
+  } catch (connErr) {
+    // SQL30081N = TCP/IP communication error (host unreachable, port closed, firewall)
+    // SQL08001  = connection failure
+    // Give operators a clean message instead of the raw IBM CLI wall of text.
+    const raw = connErr.message || '';
+    const isTcpError = raw.includes('SQL30081N') || raw.includes('SQLSTATE=08001') ||
+                       raw.includes('selectForConnectTimeout') || raw.includes('Communication error');
+    const clean = isTcpError
+      ? `Cannot reach DB2 server at ${process.env.DB2_HOST}:${process.env.DB2_PORT || 50000}. ` +
+        'Check that the host is reachable from this machine, the port is open, and DB2 is running. ' +
+        `(SQLSTATE=08001)`
+      : `DB2 connection failed: ${raw}`;
+    const err = new Error(clean);
+    err.status = 503;
+    throw err;
+  }
+
   try {
     const rows = await conn.query(sql, params);
     return rows;
