@@ -93,7 +93,7 @@ CommandBlock.propTypes = {
  *
  * @param {{ batch: Object }} props
  */
-export function CommandViewer({ batch }) {
+export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   if (!batch) return null;
 
   const scheduleIsValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
@@ -136,7 +136,7 @@ export function CommandViewer({ batch }) {
       )}
     </Stack>
   );
-}
+});
 
 CommandViewer.propTypes = {
   batch: PropTypes.shape({

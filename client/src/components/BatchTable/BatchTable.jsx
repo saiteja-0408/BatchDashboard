@@ -7,9 +7,17 @@
  * It auto-refreshes every 60 s via the useCurrentTasks hook (React Query polling).
  * On mobile (<600px) renders a card list.
  * Rows support keyboard navigation (Enter key opens detail modal).
+ *
+ * Performance optimizations:
+ *   - BatchCard is React.memo'd — only re-renders when its own props change.
+ *   - BatchRow is React.memo'd — large lists (800+ rows) avoid full re-renders
+ *     on every 60s current-tasks poll by only updating rows whose currentTask changed.
+ *   - currentTaskMap is memoised (already was).
+ *   - sortedData is memoised inside useSort (already was).
+ *   - openBatchModal is stable useCallback from context (already was).
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -37,11 +45,14 @@ function SkeletonRows({ count = 8, extraCol = false }) {
     </TableRow>
   ));
 }
-
 SkeletonRows.propTypes = { count: PropTypes.number, extraCol: PropTypes.bool };
 
-/** Mobile card for a single batch */
-function BatchCard({ batch, currentTask, onClick }) {
+/**
+ * Mobile card for a single batch.
+ * Memoised so the entire card list does not re-render when currentTaskMap
+ * updates for an unrelated batch.
+ */
+const BatchCard = React.memo(function BatchCard({ batch, currentTask, onClick }) {
   const isValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
   return (
     <Card elevation={1} sx={{ mb: 1, borderLeft: isValid ? undefined : '3px solid #ed6c02' }}>
@@ -72,11 +83,86 @@ function BatchCard({ batch, currentTask, onClick }) {
       </CardActionArea>
     </Card>
   );
-}
-
+});
 BatchCard.propTypes = {
   batch:       PropTypes.object.isRequired,
   currentTask: PropTypes.object,
+  onClick:     PropTypes.func.isRequired,
+};
+
+/**
+ * Single desktop table row — memoised so only the rows whose currentTask
+ * actually changed re-render during the 60s poll cycle.
+ */
+const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, onClick }) {
+  const isValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
+
+  const handleClick = useCallback(() => onClick(batch), [batch, onClick]);
+  const handleKeyDown = useCallback(
+    (e) => { if (e.key === 'Enter') onClick(batch); },
+    [batch, onClick]
+  );
+  const stopPropagation = useCallback((e) => e.stopPropagation(), []);
+
+  return (
+    <TableRow
+      hover
+      tabIndex={0}
+      sx={{
+        cursor: 'pointer',
+        borderLeft: isValid ? undefined : '3px solid #ed6c02',
+        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
+      }}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+    >
+      {/* Warning icon cell */}
+      <TableCell sx={{ px: 1, width: 32 }}>
+        {!isValid && (
+          <Tooltip title={`Unknown schedule: "${batch.scheduleName}"`}>
+            <WarningAmberIcon fontSize="small" color="warning" />
+          </Tooltip>
+        )}
+      </TableCell>
+      <TableCell sx={{ fontWeight: 500 }}>{batch.batchName}</TableCell>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {batch.scheduleName || (
+          <Typography variant="caption" color="error">missing</Typography>
+        )}
+      </TableCell>
+      <TableCell
+        sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      >
+        <Tooltip title={batch.arguments || ''} placement="top">
+          <span>
+            {batch.arguments || (
+              <Typography component="span" variant="caption" color="text.secondary">—</Typography>
+            )}
+          </span>
+        </Tooltip>
+      </TableCell>
+      <TableCell>
+        <Chip
+          label={SHEET_LABELS[batch.sheetSource] || batch.sheetSource}
+          size="small"
+          variant="outlined"
+          color={batch.sheetSource === 'benefits' ? 'primary' : 'secondary'}
+        />
+      </TableCell>
+      {/* Current Task cell */}
+      <TableCell onClick={stopPropagation} sx={{ py: 0.5 }}>
+        <CurrentTaskBadge
+          currentTask={currentTask}
+          isLoading={ctLoading && !currentTask}
+        />
+      </TableCell>
+    </TableRow>
+  );
+});
+BatchRow.propTypes = {
+  batch:       PropTypes.object.isRequired,
+  currentTask: PropTypes.object,
+  ctLoading:   PropTypes.bool,
   onClick:     PropTypes.func.isRequired,
 };
 
@@ -88,9 +174,6 @@ export function BatchTable({ batches, isLoading, isError }) {
   const { sortedData, sortConfig, requestSort } = useSort(batches);
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
-  // Always show Current Task column — both Benefits and Tax have parseable schedule names
-  const showCurrentTask = true;
 
   // Fetch current-task data for the active sheet; re-fetches every 60 s
   const {
@@ -135,7 +218,7 @@ export function BatchTable({ batches, isLoading, isError }) {
           <BatchCard
             key={`${b.batchName}-${i}`}
             batch={b}
-            currentTask={showCurrentTask ? currentTaskMap[b.batchName] : null}
+            currentTask={currentTaskMap[b.batchName]}
             onClick={openBatchModal}
           />
         ))}
@@ -162,81 +245,24 @@ export function BatchTable({ batches, isLoading, isError }) {
                 </TableSortLabel>
               </TableCell>
             ))}
-            {/* Current Task column — Tax sheet only */}
-            {showCurrentTask && (
-              <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 130 }}>
-                Current Task
-              </TableCell>
-            )}
+            <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 130 }}>
+              Current Task
+            </TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {isLoading ? (
-            <SkeletonRows extraCol={showCurrentTask} />
+            <SkeletonRows extraCol />
           ) : (
-            sortedData.map((batch, i) => {
-              const isValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
-              return (
-                <TableRow
-                  key={`${batch.batchName}-${i}`}
-                  hover
-                  tabIndex={0}
-                  sx={{
-                    cursor: 'pointer',
-                    borderLeft: isValid ? undefined : '3px solid #ed6c02',
-                    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
-                  }}
-                  onClick={() => openBatchModal(batch)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') openBatchModal(batch); }}
-                >
-                  {/* Warning icon cell */}
-                  <TableCell sx={{ px: 1, width: 32 }}>
-                    {!isValid && (
-                      <Tooltip title={`Unknown schedule: "${batch.scheduleName}"`}>
-                        <WarningAmberIcon fontSize="small" color="warning" />
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 500 }}>{batch.batchName}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                    {batch.scheduleName || (
-                      <Typography variant="caption" color="error">missing</Typography>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
-                    <Tooltip title={batch.arguments || ''} placement="top">
-                      <span>
-                        {batch.arguments || (
-                          <Typography component="span" variant="caption" color="text.secondary">—</Typography>
-                        )}
-                      </span>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={SHEET_LABELS[batch.sheetSource] || batch.sheetSource}
-                      size="small"
-                      variant="outlined"
-                      color={batch.sheetSource === 'benefits' ? 'primary' : 'secondary'}
-                    />
-                  </TableCell>
-                  {/* Current Task cell — Tax sheet only */}
-                  {showCurrentTask && (
-                    <TableCell
-                      onClick={(e) => e.stopPropagation()} // prevent row click when hovering badge
-                      sx={{ py: 0.5 }}
-                    >
-                      <CurrentTaskBadge
-                        currentTask={currentTaskMap[batch.batchName]}
-                        isLoading={ctLoading && !currentTaskMap[batch.batchName]}
-                      />
-                    </TableCell>
-                  )}
-                </TableRow>
-              );
-            })
+            sortedData.map((batch, i) => (
+              <BatchRow
+                key={`${batch.batchName}-${i}`}
+                batch={batch}
+                currentTask={currentTaskMap[batch.batchName]}
+                ctLoading={ctLoading}
+                onClick={openBatchModal}
+              />
+            ))
           )}
         </TableBody>
       </Table>

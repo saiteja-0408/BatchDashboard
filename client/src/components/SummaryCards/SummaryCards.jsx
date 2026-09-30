@@ -1,20 +1,17 @@
 /**
  * SummaryCards.jsx — dashboard summary section.
- * Shows total, by-sheet counts, invalid schedule count, and a pie chart.
+ * Shows total, by-sheet counts, and invalid schedule count as stat cards.
+ * Pie charts removed for a cleaner, faster layout.
  */
 
 import React from 'react';
 import {
-  Grid, Card, CardContent, Typography, Box, Skeleton, Alert,
+  Grid, Card, CardContent, Typography, Skeleton, Alert,
 } from '@mui/material';
-import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts';
 import { useSummary } from '../../hooks/useBatches';
 
-const COLORS = ['#1976d2', '#7c5cd8', '#d32f2f', '#2e7d32'];
-
-function StatCard({ label, value, color }) {
+/** Memoised to prevent re-render when parent re-renders for unrelated reasons */
+const StatCard = React.memo(function StatCard({ label, value, color }) {
   return (
     <Card elevation={2} sx={{ height: '100%' }}>
       <CardContent>
@@ -27,7 +24,7 @@ function StatCard({ label, value, color }) {
       </CardContent>
     </Card>
   );
-}
+});
 
 export function SummaryCards() {
   const { data: summary, isLoading, isError } = useSummary();
@@ -35,8 +32,8 @@ export function SummaryCards() {
   if (isLoading) {
     return (
       <Grid container spacing={2} mb={3}>
-        {[...Array(5)].map((_, i) => (
-          <Grid item xs={6} sm={4} md={2} key={i}>
+        {[...Array(4)].map((_, i) => (
+          <Grid item xs={6} sm={4} md={3} key={i}>
             <Skeleton variant="rectangular" height={90} sx={{ borderRadius: 2 }} />
           </Grid>
         ))}
@@ -53,65 +50,24 @@ export function SummaryCards() {
     );
   }
 
-  const sheetData = Object.entries(summary.bySheet || {}).map(([name, value]) => ({ name, value }));
-  const validityData = Object.entries(summary.byScheduleValidity || {}).map(([name, value]) => ({ name, value }));
-
   return (
     <Grid container spacing={2} mb={3}>
-      <Grid item xs={6} sm={4} md={2}>
+      <Grid item xs={6} sm={3} md={3}>
         <StatCard label="Total Batches"     value={summary.total} />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
+      <Grid item xs={6} sm={3} md={3}>
         <StatCard label="Benefits"          value={summary.benefits} color="primary.main" />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Tax"               value={summary.tax}      color="secondary.main" />
+      <Grid item xs={6} sm={3} md={3}>
+        <StatCard label="Tax"               value={summary.tax}     color="secondary.main" />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Unknown Schedules" value={summary.invalid}  color={summary.invalid > 0 ? 'warning.main' : 'text.secondary'} />
+      <Grid item xs={6} sm={3} md={3}>
+        <StatCard
+          label="Unknown Schedules"
+          value={summary.invalid}
+          color={summary.invalid > 0 ? 'warning.main' : 'text.secondary'}
+        />
       </Grid>
-
-      {/* By Sheet pie */}
-      {sheetData.length > 0 && (
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ height: '100%', minHeight: 180 }}>
-            <CardContent>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom>By Sheet</Typography>
-              <ResponsiveContainer width="100%" height={150}>
-                <PieChart>
-                  <Pie dataKey="value" data={sheetData} cx="50%" cy="50%" outerRadius={55} label>
-                    {sheetData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      )}
-
-      {/* Schedule validity pie */}
-      {validityData.length > 0 && (
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ height: '100%', minHeight: 180 }}>
-            <CardContent>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom>Schedule Validity</Typography>
-              <ResponsiveContainer width="100%" height={150}>
-                <PieChart>
-                  <Pie dataKey="value" data={validityData} cx="50%" cy="50%" outerRadius={55} label>
-                    {validityData.map((entry, i) => (
-                      <Cell key={i} fill={entry.name === 'Invalid' ? '#ed6c02' : '#2e7d32'} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      )}
     </Grid>
   );
 }

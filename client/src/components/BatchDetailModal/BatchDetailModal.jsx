@@ -3,9 +3,14 @@
  *
  * Shows batch metadata + Run/Resume commands.
  * Displays a schedule name warning badge when the schedule is not in the approved list.
+ *
+ * Performance:
+ *   - InfoRow is memoised — stable batch object means it never re-renders needlessly.
+ *   - handleClose is stable (useCallback) so it never causes child re-renders.
+ *   - The modal renders null immediately when no batch is selected (nothing to paint).
  */
 
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
@@ -18,7 +23,8 @@ import { CommandViewer }   from '../CommandViewer/CommandViewer';
 import { COLUMN_LABELS, SHEET_LABELS } from '../../utils/constants';
 import { useBatchContext } from '../../context/BatchContext';
 
-function InfoRow({ label, value }) {
+/** Memoised — only re-renders when label or value changes */
+const InfoRow = React.memo(function InfoRow({ label, value }) {
   if (!value && value !== 0) return null;
   return (
     <>
@@ -34,22 +40,28 @@ function InfoRow({ label, value }) {
       </Grid>
     </>
   );
-}
+});
 InfoRow.propTypes = {
   label: PropTypes.string,
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
 };
 
-export function BatchDetailModal() {
+export const BatchDetailModal = React.memo(function BatchDetailModal() {
   const { selectedBatch: batch, isModalOpen, closeBatchModal } = useBatchContext();
 
-  const handleClose = () => {
+  // Stable reference — does not change between renders so Dialog's onClose
+  // and the Close button never trigger unnecessary child re-renders.
+  const handleClose = useCallback(() => {
     closeBatchModal();
-  };
+  }, [closeBatchModal]);
+
+  // Derive sheetLabel once per batch change, not on every render
+  const sheetLabel = useMemo(
+    () => (batch ? (SHEET_LABELS[batch.sheetSource] || batch.sheetSource || '—') : ''),
+    [batch]
+  );
 
   if (!batch) return null;
-
-  const sheetLabel = SHEET_LABELS[batch.sheetSource] || batch.sheetSource || '—';
 
   return (
     <Dialog
@@ -124,4 +136,4 @@ export function BatchDetailModal() {
       </DialogActions>
     </Dialog>
   );
-}
+});
