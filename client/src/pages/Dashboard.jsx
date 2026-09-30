@@ -80,7 +80,19 @@ export default function Dashboard() {
     : null;
 
   return (
-    <Container maxWidth="xl" sx={{ py: 3, px: { xs: 1.5, sm: 2, md: 3 }, overflowX: 'hidden' }}>
+    /*
+     * Container: maxWidth="xl" maps to the 1600px cap set in ThemeContext.
+     * py scales up on xl+ so the dashboard breathes on large screens.
+     * px uses stepped values so content never hugs the edge on any viewport.
+     */
+    <Container
+      maxWidth="xl"
+      sx={{
+        py:        { xs: 2, sm: 3, lg: 4 },
+        px:        { xs: 1.5, sm: 2, md: 3, lg: 4 },
+        overflowX: 'hidden',
+      }}
+    >
       {/* Page heading */}
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -88,7 +100,7 @@ export default function Dashboard() {
         alignItems={{ xs: 'flex-start', sm: 'flex-start' }}
         flexWrap="wrap"
         gap={1}
-        mb={2}
+        mb={{ xs: 2, lg: 3 }}
       >
         <Box>
           <Typography variant="h5" fontWeight={700}>Batch Job Monitor</Typography>

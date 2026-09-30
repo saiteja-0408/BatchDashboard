@@ -10,19 +10,37 @@ import {
 } from '@mui/material';
 import { useSummary } from '../../hooks/useBatches';
 
-/** Memoised to prevent re-render when parent re-renders for unrelated reasons */
+/**
+ * Memoised stat card — scales from compact mobile to large 4K cards.
+ * On xl+ screens the number uses a larger fluid font to fill the extra space.
+ */
 const StatCard = React.memo(function StatCard({ label, value, color }) {
   return (
     <Card elevation={2} sx={{ height: '100%' }}>
-      <CardContent sx={{ p: { xs: 1.5, sm: 2 }, '&:last-child': { pb: { xs: 1.5, sm: 2 } } }}>
-        <Typography variant="body2" color="text.secondary" gutterBottom noWrap>
+      <CardContent
+        sx={{
+          p: { xs: 1.5, sm: 2, lg: 2.5 },
+          '&:last-child': { pb: { xs: 1.5, sm: 2, lg: 2.5 } },
+        }}
+      >
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          gutterBottom
+          noWrap
+          sx={{ fontSize: { xs: '0.75rem', lg: '0.85rem', xl: '0.9rem' } }}
+        >
           {label}
         </Typography>
         <Typography
           variant="h4"
           fontWeight={700}
           color={color || 'text.primary'}
-          sx={{ fontSize: { xs: '1.6rem', sm: '2rem', md: '2.125rem' } }}
+          sx={{
+            // Fluid: compact on phones, large on 1440p/4K
+            fontSize: { xs: '1.6rem', sm: '2rem', md: '2.125rem', xl: '2.5rem' },
+            lineHeight: 1.1,
+          }}
         >
           {value}
         </Typography>
@@ -36,7 +54,7 @@ export function SummaryCards() {
 
   if (isLoading) {
     return (
-      <Grid container spacing={2} mb={3}>
+      <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
         {[...Array(4)].map((_, i) => (
           <Grid item xs={6} sm={4} md={3} key={i}>
             <Skeleton variant="rectangular" height={90} sx={{ borderRadius: 2 }} />
@@ -56,17 +74,25 @@ export function SummaryCards() {
   }
 
   return (
-    <Grid container spacing={2} mb={3}>
-      <Grid item xs={6} sm={3} md={3}>
-        <StatCard label="Total Batches"     value={summary.total} />
+    /*
+     * Grid breakpoints:
+     *   xs:  2 cards / row  (phones)
+     *   sm:  4 cards / row  (tablets → fills the row)
+     *   xl:  4 cards / row  (1440p — each card widens naturally via auto column width)
+     *
+     * spacing increases on lg+ so cards breathe on large screens.
+     */
+    <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
+      <Grid item xs={6} sm={3}>
+        <StatCard label="Total Batches"    value={summary.total} />
       </Grid>
-      <Grid item xs={6} sm={3} md={3}>
-        <StatCard label="Benefits"          value={summary.benefits} color="primary.main" />
+      <Grid item xs={6} sm={3}>
+        <StatCard label="Benefits"         value={summary.benefits} color="primary.main" />
       </Grid>
-      <Grid item xs={6} sm={3} md={3}>
-        <StatCard label="Tax"               value={summary.tax}     color="secondary.main" />
+      <Grid item xs={6} sm={3}>
+        <StatCard label="Tax"              value={summary.tax}      color="secondary.main" />
       </Grid>
-      <Grid item xs={6} sm={3} md={3}>
+      <Grid item xs={6} sm={3}>
         <StatCard
           label="Unknown Schedules"
           value={summary.invalid}

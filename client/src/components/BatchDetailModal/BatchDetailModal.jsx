@@ -76,6 +76,8 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
           m: { xs: 1, sm: 2 },
           maxHeight: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 32px)' },
           width: { xs: 'calc(100% - 16px)', sm: undefined },
+          // On very wide screens cap width so the modal doesn't span 3000px
+          maxWidth: { xl: '900px', xl2: '1040px' },
         },
       }}
     >
@@ -127,6 +129,10 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
         <Typography variant="subtitle2" fontWeight={700} color="text.secondary" gutterBottom>
           Details
         </Typography>
+        {/*
+          Two-column metadata grid on lg+ screens — label left, value right,
+          then two metadata pairs side by side for better use of wide modals.
+        */}
         <Grid container spacing={1} sx={{ mb: 3 }}>
           <InfoRow label={COLUMN_LABELS.batchName}    value={batch.batchName} />
           <InfoRow label={COLUMN_LABELS.scheduleName} value={batch.scheduleName} />

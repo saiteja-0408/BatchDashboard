@@ -37,19 +37,24 @@ const SEARCHABLE_IDS = new Set([
   'parent_job_name', 'parent_job_group',
 ]);
 
-/** Column definitions — minWidths kept tight so total fits a 1280px screen */
+/**
+ * Column definitions.
+ * minWidth keeps the table usable on 1280px.
+ * flex (0–1) is a relative weight hint used below to assign proportional widths
+ * on large screens where the table has extra horizontal space.
+ */
 const COLUMNS = [
-  { id: 'job_name',         label: 'Job Name',     minWidth: 160 },
-  { id: 'job_group',        label: 'Job Group',    minWidth: 140 },
-  { id: 'start_time',       label: 'Start Time',   minWidth: 90  },
-  { id: 'end_time',         label: 'End Time',     minWidth: 90  },
-  { id: 'next_fire_time',   label: 'Next Fire',    minWidth: 90  },
-  { id: 'biz_error_flag',   label: 'Biz Err',      minWidth: 50  },
-  { id: 'error_flag',       label: 'Err',          minWidth: 40  },
-  { id: 'killed_flag',      label: 'Killed',       minWidth: 50  },
-  { id: 'parent_job_name',  label: 'Parent Job',   minWidth: 140 },
-  { id: 'parent_job_group', label: 'Parent Group', minWidth: 110 },
-  { id: '_status',          label: 'Status',       minWidth: 130 },
+  { id: 'job_name',         label: 'Job Name',     minWidth: 160, flex: 2   },
+  { id: 'job_group',        label: 'Job Group',    minWidth: 140, flex: 1.5 },
+  { id: 'start_time',       label: 'Start Time',   minWidth: 90,  flex: 1   },
+  { id: 'end_time',         label: 'End Time',     minWidth: 90,  flex: 1   },
+  { id: 'next_fire_time',   label: 'Next Fire',    minWidth: 90,  flex: 1   },
+  { id: 'biz_error_flag',   label: 'Biz Err',      minWidth: 50,  flex: 0.5 },
+  { id: 'error_flag',       label: 'Err',          minWidth: 40,  flex: 0.5 },
+  { id: 'killed_flag',      label: 'Killed',       minWidth: 50,  flex: 0.5 },
+  { id: 'parent_job_name',  label: 'Parent Job',   minWidth: 140, flex: 1.5 },
+  { id: 'parent_job_group', label: 'Parent Group', minWidth: 110, flex: 1   },
+  { id: '_status',          label: 'Status',       minWidth: 130, flex: 1   },
 ];
 
 /** Status chip derived from biz_error_flag */
@@ -280,7 +285,8 @@ export function StatusReportTab({ enabled }) {
           sx={{
             width:     '100%',
             overflowX: 'auto',
-            maxHeight: 'calc(100vh - 310px)',   // +50px to account for search field
+            // maxHeight scales with screen height — taller screens show more rows
+            maxHeight: { xs: 'calc(100vh - 340px)', xl: 'calc(100vh - 300px)' },
             minHeight: 200,
           }}
         >
@@ -296,11 +302,12 @@ export function StatusReportTab({ enabled }) {
                     key={col.id}
                     sx={{
                       fontWeight: 700,
-                      fontSize:   '0.75rem',
+                      // Fluid header font — slightly larger on xl+ for data density
+                      fontSize:   { xs: '0.72rem', md: '0.75rem', xl: '0.8rem' },
                       minWidth:   col.minWidth,
                       whiteSpace: { xs: 'normal', md: 'nowrap' },
                       lineHeight: 1.3,
-                      py: 1,
+                      py:         { xs: 1, xl: 1.25 },
                     }}
                   >
                     {col.label}
@@ -331,13 +338,17 @@ export function StatusReportTab({ enabled }) {
                     <TableCell
                       key={col.id}
                       sx={{
-                        fontSize:   '0.78rem',
-                        py:         0.75,
+                        // Fluid row font — improves data density on large screens
+                        fontSize:  { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
+                        py:        { xs: 0.75, xl: 1 },
                         whiteSpace: col.id === 'job_name' || col.id === 'job_group' || col.id === 'parent_job_name'
                           ? 'normal'
                           : 'nowrap',
                         wordBreak: 'break-word',
-                        maxWidth:  col.id === 'job_name' ? 200 : 'none',
+                        // job_name allowed to grow more on large screens
+                        maxWidth: col.id === 'job_name'
+                          ? { xs: 180, md: 220, xl: 320 }
+                          : 'none',
                       }}
                     >
                       {col.id === '_status'

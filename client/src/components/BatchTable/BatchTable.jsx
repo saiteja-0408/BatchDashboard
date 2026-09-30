@@ -124,14 +124,14 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
           </Tooltip>
         )}
       </TableCell>
-      <TableCell sx={{ fontWeight: 500 }}>{batch.batchName}</TableCell>
-      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+      <TableCell sx={{ fontWeight: 500, minWidth: 160 }}>{batch.batchName}</TableCell>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: 'clamp(0.72rem, 0.85vw, 0.85rem)', minWidth: 140 }}>
         {batch.scheduleName || (
           <Typography variant="caption" color="error">missing</Typography>
         )}
       </TableCell>
       <TableCell
-        sx={{ maxWidth: { xs: 140, sm: 200, md: 260 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        sx={{ maxWidth: { xs: 140, sm: 200, md: 260, xl: 340 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
       >
         <Tooltip title={batch.arguments || ''} placement="top">
           <span>
@@ -228,14 +228,31 @@ export function BatchTable({ batches, isLoading, isError }) {
 
   // ── Desktop table layout ──────────────────────────────────────────────────
   return (
-    <TableContainer component={Paper} elevation={2} sx={{ overflowX: 'auto', width: '100%' }}>
+    <TableContainer
+      component={Paper}
+      elevation={2}
+      sx={{
+        overflowX: 'auto',
+        width:     '100%',
+        // stickyHeader needs an explicit maxHeight — scale with viewport height
+        // so large screens show more rows without scrolling the whole page.
+        maxHeight: { xs: 'none', md: 'calc(100vh - 320px)', xl: 'calc(100vh - 280px)' },
+      }}
+    >
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
             {/* Warning indicator column — no sort */}
             <TableCell sx={{ width: 28, minWidth: 28 }} />
             {SORTABLE_COLUMNS.map((col) => (
-              <TableCell key={col.id} sx={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+              <TableCell
+                key={col.id}
+                sx={{
+                  whiteSpace: 'nowrap',
+                  fontWeight: 700,
+                  fontSize: { md: '0.8rem', xl: '0.875rem' },
+                }}
+              >
                 <TableSortLabel
                   active={sortConfig?.key === col.id}
                   direction={sortConfig?.key === col.id ? sortConfig.direction : 'asc'}
@@ -245,7 +262,7 @@ export function BatchTable({ batches, isLoading, isError }) {
                 </TableSortLabel>
               </TableCell>
             ))}
-            <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110 }}>
+            <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110, fontSize: { md: '0.8rem', xl: '0.875rem' } }}>
               Current Task
             </TableCell>
           </TableRow>
