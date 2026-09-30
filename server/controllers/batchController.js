@@ -9,11 +9,12 @@
 const excelService = require('../services/excelService');
 
 /**
- * GET /api/batches
- * Returns all batches in the store.
+ * GET /api/batches?sheet=benefits|tax
+ * Returns all batches, optionally filtered by sheetSource.
  */
 function getAllBatches(req, res) {
-  const batches = excelService.getAll();
+  const sheet   = req.query.sheet || undefined;
+  const batches = excelService.getAll(sheet);
   res.json({ success: true, count: batches.length, data: batches });
 }
 
@@ -27,38 +28,43 @@ function getSummary(req, res) {
 }
 
 /**
- * GET /api/batches/search?q=<query>
- * Full-text search across all batch fields.
+ * GET /api/batches/search?q=<query>&sheet=benefits|tax
+ * Full-text search across batchName, scheduleName, and arguments.
  */
 function searchBatches(req, res) {
-  const q = (req.query.q || '').trim();
+  const q     = (req.query.q || '').trim();
+  const sheet = req.query.sheet || undefined;
   if (!q) {
     return res.json({ success: true, count: 0, data: [] });
   }
-  const results = excelService.search(q);
+  const results = excelService.search(q, sheet);
   res.json({ success: true, count: results.length, data: results });
 }
 
 /**
- * GET /api/batches/filter?domain=&frequency=&status=
- * Filter batches by domain, frequency, and/or last run status.
+ * GET /api/batches/filter?sheet=benefits|tax&scheduleValid=true|false
+ * Filter batches by sheet and/or schedule validity.
  */
 function filterBatches(req, res) {
-  const { domain, frequency, status } = req.query;
-  const results = excelService.filter({ domain, frequency, status });
+  const { sheet, scheduleValid } = req.query;
+  const results = excelService.filter({
+    sheetSource:   sheet,
+    scheduleValid: scheduleValid,
+  });
   res.json({ success: true, count: results.length, data: results });
 }
 
 /**
- * GET /api/batches/:id
- * Returns a single batch by Batch_ID.
- * NOTE: This route must be registered AFTER /search and /filter to prevent
- * those path segments from being matched as :id parameters.
+ * GET /api/batches/:name?sheet=benefits|tax
+ * Returns a single batch by batchName (URL-encoded).
+ * NOTE: registered AFTER /summary, /search, /filter in batchRoutes.js
  */
-function getBatchById(req, res) {
-  const batch = excelService.getById(req.params.id);
+function getBatchByName(req, res) {
+  const name  = decodeURIComponent(req.params.name);
+  const sheet = req.query.sheet || undefined;
+  const batch = excelService.getByName(name, sheet);
   if (!batch) {
-    const err = new Error(`Batch with ID "${req.params.id}" not found.`);
+    const err = new Error(`Batch "${name}" not found.`);
     err.status = 404;
     throw err;
   }
@@ -87,4 +93,4 @@ async function uploadExcel(req, res) {
   });
 }
 
-module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchById, uploadExcel };
+module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, uploadExcel };

@@ -1,5 +1,6 @@
 /**
  * App.jsx — root component: routing and layout shell.
+ * Only the Dashboard route is needed for this application.
  */
 
 import React from 'react';
@@ -12,7 +13,6 @@ import { AppThemeProvider } from './context/ThemeContext';
 import { BatchProvider }    from './context/BatchContext';
 import { AppHeader }        from './components/AppHeader/AppHeader';
 import Dashboard            from './pages/Dashboard';
-import BatchDetail          from './pages/BatchDetail';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,8 +32,7 @@ export default function App() {
             <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
               <AppHeader />
               <Routes>
-                <Route path="/"           element={<Dashboard />} />
-                <Route path="/batch/:id"  element={<BatchDetail />} />
+                <Route path="/" element={<Dashboard />} />
               </Routes>
             </Box>
           </BrowserRouter>

@@ -10,8 +10,10 @@ const express = require('express');
 const path = require('path');
 const multer = require('multer');
 
-const controller = require('../controllers/batchController');
-const { asyncWrapper } = require('../middlewares/errorHandler');
+const controller              = require('../controllers/batchController');
+const currentTasksController  = require('../controllers/currentTasksController');
+const statusReportController  = require('../controllers/statusReportController');
+const { asyncWrapper }        = require('../middlewares/errorHandler');
 
 const router = express.Router();
 
@@ -42,7 +44,13 @@ router.get('/batches',             asyncWrapper(controller.getAllBatches));
 router.get('/batches/summary',     asyncWrapper(controller.getSummary));
 router.get('/batches/search',      asyncWrapper(controller.searchBatches));
 router.get('/batches/filter',      asyncWrapper(controller.filterBatches));
-router.get('/batches/:id',         asyncWrapper(controller.getBatchById));
+router.get('/batches/:name',       asyncWrapper(controller.getBatchByName));
+
+// ── Current-tasks route ───────────────────────────────────────────────────────
+router.get('/current-tasks',       asyncWrapper(currentTasksController.getCurrentTasks));
+
+// ── Status report route ───────────────────────────────────────────────────────
+router.get('/status-report',       asyncWrapper(statusReportController.getStatusReport));
 
 // ── File upload ───────────────────────────────────────────────────────────────
 router.post('/upload', upload.single('file'), asyncWrapper(controller.uploadExcel));

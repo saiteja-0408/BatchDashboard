@@ -27,11 +27,14 @@ client.interceptors.response.use(
 );
 
 /**
- * Fetches all batches.
+ * Fetches all batches, optionally for a specific sheet.
+ * @param {string|undefined} sheet - 'benefits' | 'tax' | undefined (all)
  * @returns {Promise<Object[]>}
  */
-export async function fetchAllBatches() {
-  const res = await client.get(API_PATHS.batches);
+export async function fetchAllBatches(sheet) {
+  const res = await client.get(API_PATHS.batches, {
+    params: sheet ? { sheet } : {},
+  });
   return res.data.data;
 }
 
@@ -47,31 +50,48 @@ export async function fetchSummary() {
 /**
  * Searches batches by a free-text query.
  * @param {string} query
+ * @param {string|undefined} sheet
  * @returns {Promise<Object[]>}
  */
-export async function searchBatches(query) {
-  const res = await client.get(API_PATHS.search, { params: { q: query } });
+export async function searchBatches(query, sheet) {
+  const res = await client.get(API_PATHS.search, {
+    params: { q: query, ...(sheet ? { sheet } : {}) },
+  });
   return res.data.data;
 }
 
 /**
- * Filters batches by domain, frequency, and/or status.
- * @param {{ domain?: string, frequency?: string, status?: string }} filters
- * @returns {Promise<Object[]>}
- */
-export async function filterBatches(filters) {
-  const res = await client.get(API_PATHS.filter, { params: filters });
-  return res.data.data;
-}
-
-/**
- * Fetches a single batch by ID.
- * @param {string} id
+ * Fetches a single batch by batchName within an optional sheet.
+ * @param {string} name
+ * @param {string|undefined} sheet
  * @returns {Promise<Object>}
  */
-export async function fetchBatchById(id) {
-  const res = await client.get(API_PATHS.batchById(id));
+export async function fetchBatchByName(name, sheet) {
+  const res = await client.get(API_PATHS.batchByName(name, sheet));
   return res.data.data;
+}
+
+/**
+ * Fetches all batches augmented with current-task status for a given sheet.
+ * @param {string} sheet - 'benefits' | 'tax'
+ * @returns {Promise<Object[]>}
+ */
+export async function fetchCurrentTasks(sheet) {
+  const res = await client.get(API_PATHS.currentTasks(sheet));
+  return res.data;  // return full envelope { success, sheet, count, serverTime, data }
+}
+
+/**
+ * Fetches the status report data from DB2 (via server-side cache).
+ * Pass force=true to bypass the server cache and force a fresh DB2 query.
+ *
+ * @param {boolean} [force=false]
+ * @returns {Promise<{ data: Object[], cacheHit: boolean, cachedAt: string, count: number }>}
+ */
+export async function fetchStatusReport(force = false) {
+  const res = await client.get(API_PATHS.statusReport(force));
+  // Return the full envelope — consumer needs cacheHit + cachedAt
+  return res.data;
 }
 
 /**

@@ -1,17 +1,16 @@
 /**
  * excelService.js — in-memory batch data store + reload logic.
  *
- * Acts as the data-access layer between the file parser and the controller.
- * Holds the parsed batch list in memory so API requests don't re-read the file
- * on every call. Call loadFromFile() to refresh the store (startup or after upload).
+ * The store now holds batches from both sheets (Benefits + Tax).
+ * batchName is used as the unique key within a sheet.
+ * sheetSource ('benefits' | 'tax') is used for sheet-level filtering.
  */
 
 const { parseExcelFile } = require('../utils/fileParser');
 const { createBatch, validateBatch } = require('../models/batchModel');
-const { ACTIVE_STATUSES } = require('../config/constants');
 
 /**
- * In-memory store. Mutated only by loadFromFile().
+ * In-memory store.
  * @type {import('../models/batchModel').BatchModel[]}
  */
 let _store = [];
@@ -24,7 +23,6 @@ let _store = [];
  * @returns {Promise<{ count: number, warnings: string[] }>}
  */
 async function loadFromFile(filePath) {
-  // parseExcelFile is async (ExcelJS uses async file I/O)
   const { rows, warnings } = await parseExcelFile(filePath);
 
   if (warnings.length > 0) {
@@ -33,61 +31,76 @@ async function loadFromFile(filePath) {
 
   const batches = [];
   for (const row of rows) {
-    const batch = createBatch(row);
+    const batch        = createBatch(row);
     const batchWarnings = validateBatch(batch);
+    // Validation warnings are informational — all rows with a batchName are stored
     batchWarnings.forEach((w) => console.warn(`[excelService] VALIDATION: ${w}`));
-    if (batch.batchId) batches.push(batch); // only store rows with an ID
+    if (batch.batchName) batches.push(batch);
   }
 
   _store = batches;
-  console.log(`[excelService] Store loaded: ${_store.length} batch(es).`);
+  const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
+  const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
+  console.log(`[excelService] Store loaded: ${_store.length} batch(es) — ${bCount} Benefits, ${tCount} Tax.`);
   return { count: _store.length, warnings };
 }
 
 /**
  * Returns a shallow copy of the in-memory store.
+ * Optionally filtered by sheetSource.
+ * @param {'benefits'|'tax'|undefined} sheetSource
  * @returns {import('../models/batchModel').BatchModel[]}
  */
-function getAll() {
+function getAll(sheetSource) {
+  if (sheetSource) return _store.filter((b) => b.sheetSource === sheetSource);
   return [..._store];
 }
 
 /**
- * Finds a single batch by its batchId.
- * @param {string} id
+ * Finds a single batch by batchName within an optional sheet.
+ * batchName is URL-encoded in the route; decode before comparing.
+ * @param {string} name
+ * @param {string|undefined} sheetSource
  * @returns {import('../models/batchModel').BatchModel | undefined}
  */
-function getById(id) {
-  return _store.find((b) => b.batchId === id);
-}
-
-/**
- * Full-text search across all string fields.
- * Case-insensitive substring match.
- * @param {string} query
- * @returns {import('../models/batchModel').BatchModel[]}
- */
-function search(query) {
-  const q = query.toLowerCase();
-  return _store.filter((b) =>
-    Object.values(b).some(
-      (v) => typeof v === 'string' && v.toLowerCase().includes(q)
-    )
+function getByName(name, sheetSource) {
+  return _store.find((b) =>
+    b.batchName === name &&
+    (!sheetSource || b.sheetSource === sheetSource)
   );
 }
 
 /**
- * Filters the store by optional domain, frequency, and status criteria.
- * All provided filters are applied as AND conditions.
- *
- * @param {{ domain?: string, frequency?: string, status?: string }} filters
+ * Full-text search across batchName, scheduleName, and arguments.
+ * @param {string} query
+ * @param {string|undefined} sheetSource
+ * @returns {import('../models/batchModel').BatchModel[]}
+ */
+function search(query, sheetSource) {
+  const q = query.toLowerCase();
+  return _store.filter((b) => {
+    if (sheetSource && b.sheetSource !== sheetSource) return false;
+    return (
+      b.batchName.toLowerCase().includes(q)    ||
+      b.scheduleName.toLowerCase().includes(q) ||
+      b.arguments.toLowerCase().includes(q)
+    );
+  });
+}
+
+/**
+ * Filters the store by sheetSource and/or scheduleValid flag.
+ * @param {{ sheetSource?: string, scheduleValid?: string }} filters
  * @returns {import('../models/batchModel').BatchModel[]}
  */
 function filter(filters) {
   return _store.filter((b) => {
-    if (filters.domain    && b.domain.toLowerCase()        !== filters.domain.toLowerCase())    return false;
-    if (filters.frequency && b.frequency.toLowerCase()     !== filters.frequency.toLowerCase()) return false;
-    if (filters.status    && b.lastRunStatus.toLowerCase() !== filters.status.toLowerCase())    return false;
+    if (filters.sheetSource && b.sheetSource !== filters.sheetSource) return false;
+    // scheduleValid filter: 'true' | 'false'
+    if (filters.scheduleValid !== undefined && filters.scheduleValid !== '') {
+      const expected = filters.scheduleValid === 'true';
+      if (b.scheduleValid !== expected) return false;
+    }
     return true;
   });
 }
@@ -97,32 +110,19 @@ function filter(filters) {
  * @returns {Object}
  */
 function getSummary() {
-  const total = _store.length;
-  const active = _store.filter((b) => b.isActive).length;
-  const inactive = total - active;
+  const total    = _store.length;
+  const benefits = _store.filter((b) => b.sheetSource === 'benefits').length;
+  const tax      = _store.filter((b) => b.sheetSource === 'tax').length;
+  const invalid  = _store.filter((b) => !b.scheduleValid).length;
 
-  const byDomain = _store.reduce((acc, b) => {
-    acc[b.domain] = (acc[b.domain] || 0) + 1;
-    return acc;
-  }, {});
+  const bySheet = { Benefits: benefits, Tax: tax };
 
-  const byStatus = _store.reduce((acc, b) => {
-    acc[b.lastRunStatus] = (acc[b.lastRunStatus] || 0) + 1;
-    return acc;
-  }, {});
+  const byScheduleValidity = {
+    Valid:   total - invalid,
+    Invalid: invalid,
+  };
 
-  // "Running today" = lastRunStatus is Running or lastRunTime is today's date
-  const today = new Date().toDateString();
-  const runningToday = _store.filter((b) => {
-    if (b.lastRunStatus === 'Running') return true;
-    if (!b.lastRunTime) return false;
-    try { return new Date(b.lastRunTime).toDateString() === today; }
-    catch { return false; }
-  }).length;
-
-  const failed = _store.filter((b) => b.lastRunStatus === 'Failed').length;
-
-  return { total, active, inactive, byDomain, byStatus, runningToday, failed };
+  return { total, benefits, tax, invalid, bySheet, byScheduleValidity };
 }
 
-module.exports = { loadFromFile, getAll, getById, search, filter, getSummary };
+module.exports = { loadFromFile, getAll, getByName, search, filter, getSummary };
