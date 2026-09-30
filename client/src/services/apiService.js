@@ -3,13 +3,22 @@
  *
  * All components interact with the API through these functions —
  * never call Axios directly from a component.
+ *
+ * Timeouts:
+ *   DEFAULT_TIMEOUT_MS  — used for all fast calls (batches, summary, current-tasks)
+ *   DB_TIMEOUT_MS       — used for the Status Report call which hits DB2/PG and
+ *                         can be slow on first load (cold connection, large result set).
+ *                         Change DB_TIMEOUT_MS here to tune without touching any component.
  */
 
 import axios from 'axios';
 import { API_PATHS } from '../utils/constants';
 
+const DEFAULT_TIMEOUT_MS = 15_000;  // 15 s — fast in-memory API calls
+const DB_TIMEOUT_MS      = 60_000;  // 60 s — DB2 / PostgreSQL queries
+
 const client = axios.create({
-  timeout: 15000,
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -85,11 +94,16 @@ export async function fetchCurrentTasks(sheet) {
  * Fetches the status report data from DB2 (via server-side cache).
  * Pass force=true to bypass the server cache and force a fresh DB2 query.
  *
+ * Uses DB_TIMEOUT_MS (60 s) instead of the default 15 s because this call
+ * hits DB2 / PostgreSQL on a cold connection and may return a large result set.
+ *
  * @param {boolean} [force=false]
  * @returns {Promise<{ data: Object[], cacheHit: boolean, cachedAt: string, count: number }>}
  */
 export async function fetchStatusReport(force = false) {
-  const res = await client.get(API_PATHS.statusReport(force));
+  const res = await client.get(API_PATHS.statusReport(force), {
+    timeout: DB_TIMEOUT_MS,
+  });
   // Return the full envelope — consumer needs cacheHit + cachedAt
   return res.data;
 }
