@@ -27,7 +27,7 @@ export function SearchBar() {
     <TextField
       fullWidth
       size="small"
-      placeholder="Search batches — name, ID, team, command…"
+      placeholder="Search by batch name, schedule group, or arguments…"
       value={localValue}
       onChange={(e) => setLocalValue(e.target.value)}
       InputProps={{
