@@ -9,7 +9,7 @@
     "dev:client": "cd client && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build:client": "cd client && npm run build",
-    "generate-sample": "node data/generateSample.js",
+    "generate-sample": "node scripts/generateTestData.js",
     "install:all": "npm install && cd client && npm install",
     "test": "jest tests/"
   },
