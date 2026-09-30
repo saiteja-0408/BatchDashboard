@@ -19,9 +19,10 @@ const cors    = require('cors');
 const path    = require('path');
 const fs      = require('fs');
 
-const batchRoutes   = require('./routes/batchRoutes');
-const { errorHandler } = require('./middlewares/errorHandler');
-const excelService  = require('./services/excelService');
+const batchRoutes              = require('./routes/batchRoutes');
+const { errorHandler }         = require('./middlewares/errorHandler');
+const excelService             = require('./services/excelService');
+const { logStartupMode }       = require('./services/db2Service');
 
 const app  = express();
 const PORT = process.env.PORT || 4000;
@@ -71,6 +72,9 @@ async function bootstrap() {
     console.error(`[startup] Failed to load Excel files: ${err.message}`);
     console.warn('[startup] Server starting with empty batch store.');
   }
+
+  // Log DB2 / mock mode so the operator can see at a glance which data source is active
+  logStartupMode();
 
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`[server] Batch Dashboard API running on http://127.0.0.1:${PORT}`);

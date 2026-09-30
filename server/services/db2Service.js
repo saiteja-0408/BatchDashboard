@@ -24,6 +24,8 @@
 const { getDb2ConnectionString } = require('../config/db2.config');
 const { MOCK_STATUS_REPORT_ROWS } = require('./mockData');
 
+const REQUIRED_DB2_VARS = ['DB2_HOST', 'DB2_DATABASE', 'DB2_USER', 'DB2_PASSWORD'];
+
 /**
  * Returns true when mock mode is active.
  * Mock mode is on if USE_MOCK_DATA=true OR any required DB2 credential is absent.
@@ -32,9 +34,34 @@ const { MOCK_STATUS_REPORT_ROWS } = require('./mockData');
  */
 function isMockMode() {
   if (process.env.USE_MOCK_DATA === 'true') return true;
+  return REQUIRED_DB2_VARS.some((k) => !process.env[k]);
+}
 
-  const required = ['DB2_HOST', 'DB2_DATABASE', 'DB2_USER', 'DB2_PASSWORD'];
-  return required.some((k) => !process.env[k]);
+/**
+ * Logs the current DB2 / mock mode decision at server startup.
+ * Called once from app.js so the operator can immediately see which mode is active
+ * and — critically — which .env variables are missing when mock mode is forced on.
+ */
+function logStartupMode() {
+  if (process.env.USE_MOCK_DATA === 'true') {
+    console.log('[db2Service] Mode: MOCK  (USE_MOCK_DATA=true in .env — returning static data)');
+    return;
+  }
+
+  const missing = REQUIRED_DB2_VARS.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.warn(
+      '[db2Service] Mode: MOCK  (USE_MOCK_DATA is not "true" but the following required ' +
+      `.env variables are missing or empty: ${missing.join(', ')})\n` +
+      '             Set all four variables to switch to live DB2 mode:\n' +
+      '               DB2_HOST, DB2_DATABASE, DB2_USER, DB2_PASSWORD'
+    );
+  } else {
+    console.log(
+      `[db2Service] Mode: LIVE  (USE_MOCK_DATA≠true, all DB2 credentials present — ` +
+      `connecting to ${process.env.DB2_HOST}:${process.env.DB2_PORT || 50000})`
+    );
+  }
 }
 
 /**
@@ -84,4 +111,4 @@ async function queryDb2(sql, params = []) {
   }
 }
 
-module.exports = { queryDb2, isMockMode };
+module.exports = { queryDb2, isMockMode, logStartupMode };
