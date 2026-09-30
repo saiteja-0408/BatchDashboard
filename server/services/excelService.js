@@ -1,9 +1,15 @@
 /**
  * excelService.js — in-memory batch data store + reload logic.
  *
- * The store now holds batches from both sheets (Benefits + Tax).
+ * The store holds batches from both sheets (Benefits + Tax).
  * batchName is used as the unique key within a sheet.
  * sheetSource ('benefits' | 'tax') is used for sheet-level filtering.
+ *
+ * Two load entry-points:
+ *   loadFromFiles(benefitsPath, taxPath) — used at server startup,
+ *     reads both dedicated files and merges them into one store.
+ *   loadFromFile(filePath) — kept for tests; loads a single file
+ *     (which may contain both sheets) and replaces the store.
  */
 
 const { parseExcelFile } = require('../utils/fileParser');
@@ -16,13 +22,13 @@ const { createBatch, validateBatch } = require('../models/batchModel');
 let _store = [];
 
 /**
- * Parses the given Excel file and replaces the in-memory store.
- * Logs all warnings and validation issues to the server console.
+ * Internal helper: parses one file, validates rows, and returns a BatchModel[].
+ * Does NOT mutate _store.
  *
- * @param {string} filePath - Absolute path to the .xlsx file
- * @returns {Promise<{ count: number, warnings: string[] }>}
+ * @param {string} filePath
+ * @returns {Promise<{ batches: import('../models/batchModel').BatchModel[], warnings: string[] }>}
  */
-async function loadFromFile(filePath) {
+async function _parseToBatches(filePath) {
   const { rows, warnings } = await parseExcelFile(filePath);
 
   if (warnings.length > 0) {
@@ -31,12 +37,55 @@ async function loadFromFile(filePath) {
 
   const batches = [];
   for (const row of rows) {
-    const batch        = createBatch(row);
+    const batch         = createBatch(row);
     const batchWarnings = validateBatch(batch);
-    // Validation warnings are informational — all rows with a batchName are stored
     batchWarnings.forEach((w) => console.warn(`[excelService] VALIDATION: ${w}`));
     if (batch.batchName) batches.push(batch);
   }
+
+  return { batches, warnings };
+}
+
+/**
+ * Loads Benefits and Tax data from two separate Excel files and merges them
+ * into the in-memory store. This is the primary entry-point used at server startup.
+ *
+ * @param {string} benefitsPath - Absolute path to benefits.xlsx
+ * @param {string} taxPath      - Absolute path to tax.xlsx
+ * @returns {Promise<{ count: number, warnings: string[] }>}
+ */
+async function loadFromFiles(benefitsPath, taxPath) {
+  const allWarnings = [];
+
+  const [benefitsResult, taxResult] = await Promise.all([
+    _parseToBatches(benefitsPath).catch((err) => {
+      allWarnings.push(`benefits.xlsx: ${err.message}`);
+      return { batches: [], warnings: [] };
+    }),
+    _parseToBatches(taxPath).catch((err) => {
+      allWarnings.push(`tax.xlsx: ${err.message}`);
+      return { batches: [], warnings: [] };
+    }),
+  ]);
+
+  allWarnings.push(...benefitsResult.warnings, ...taxResult.warnings);
+
+  _store = [...benefitsResult.batches, ...taxResult.batches];
+  const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
+  const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
+  console.log(`[excelService] Store loaded: ${_store.length} batch(es) — ${bCount} Benefits, ${tCount} Tax.`);
+  return { count: _store.length, warnings: allWarnings };
+}
+
+/**
+ * Parses a single Excel file and replaces the in-memory store.
+ * Kept for use in tests (which load data/batches.xlsx as a fixture).
+ *
+ * @param {string} filePath - Absolute path to the .xlsx file
+ * @returns {Promise<{ count: number, warnings: string[] }>}
+ */
+async function loadFromFile(filePath) {
+  const { batches, warnings } = await _parseToBatches(filePath);
 
   _store = batches;
   const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
@@ -125,4 +174,4 @@ function getSummary() {
   return { total, benefits, tax, invalid, bySheet, byScheduleValidity };
 }
 
-module.exports = { loadFromFile, getAll, getByName, search, filter, getSummary };
+module.exports = { loadFromFiles, loadFromFile, getAll, getByName, search, filter, getSummary };

@@ -47,7 +47,8 @@ export function SummaryCards() {
   if (isError || !summary) {
     return (
       <Alert severity="info" sx={{ mb: 2 }}>
-        Upload an Excel file with Benefits and Tax sheets to see summary stats.
+        No batch data loaded. Check that <strong>benefits.xlsx</strong> and{' '}
+        <strong>tax.xlsx</strong> are present in the <code>data/</code> directory.
       </Alert>
     );
   }

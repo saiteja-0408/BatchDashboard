@@ -94,16 +94,3 @@ export async function fetchStatusReport(force = false) {
   return res.data;
 }
 
-/**
- * Uploads an Excel file to replace the server-side batch store.
- * @param {File} file
- * @returns {Promise<{ count: number, warnings: string[] }>}
- */
-export async function uploadExcelFile(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await client.post(API_PATHS.upload, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return res.data;
-}

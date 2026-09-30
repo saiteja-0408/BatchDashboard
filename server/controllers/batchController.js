@@ -71,26 +71,4 @@ function getBatchByName(req, res) {
   res.json({ success: true, data: batch });
 }
 
-/**
- * POST /api/upload
- * Accepts a multipart/form-data Excel file upload.
- * The multer middleware (configured in routes) attaches req.file.
- * On success, reloads the in-memory store from the uploaded file.
- */
-async function uploadExcel(req, res) {
-  if (!req.file) {
-    const err = new Error('No file uploaded. Send a .xlsx file in the "file" field.');
-    err.status = 400;
-    throw err;
-  }
-
-  const { count, warnings } = await excelService.loadFromFile(req.file.path);
-  res.json({
-    success: true,
-    message: `File uploaded and processed. ${count} batch(es) loaded.`,
-    warnings,
-    count,
-  });
-}
-
-module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, uploadExcel };
+module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName };

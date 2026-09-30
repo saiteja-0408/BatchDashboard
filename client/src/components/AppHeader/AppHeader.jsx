@@ -1,16 +1,15 @@
 /**
- * AppHeader.jsx — top navigation bar with branding, dark mode toggle, and upload button.
+ * AppHeader.jsx — top navigation bar with branding and dark mode toggle.
  */
 
 import React from 'react';
 import {
-  AppBar, Toolbar, Typography, IconButton, Tooltip, Box,
+  AppBar, Toolbar, Typography, IconButton, Tooltip,
 } from '@mui/material';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { Link } from 'react-router-dom';
 import { useThemeMode } from '../../context/ThemeContext';
-import { UploadButton } from '../UploadButton/UploadButton';
 
 export function AppHeader() {
   const { toggleDarkMode, isDark } = useThemeMode();
@@ -27,14 +26,11 @@ export function AppHeader() {
           ⚙ Batch Job Dashboard
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          <UploadButton />
-          <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
-            <IconButton color="inherit" onClick={toggleDarkMode} size="small">
-              {isDark ? <Brightness7Icon /> : <Brightness4Icon />}
-            </IconButton>
-          </Tooltip>
-        </Box>
+        <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+          <IconButton color="inherit" onClick={toggleDarkMode} size="small">
+            {isDark ? <Brightness7Icon /> : <Brightness4Icon />}
+          </IconButton>
+        </Tooltip>
       </Toolbar>
     </AppBar>
   );

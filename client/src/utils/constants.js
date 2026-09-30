@@ -14,7 +14,6 @@ export const API_PATHS = {
   // batchName must be URL-encoded by the caller
   batchByName: (name, sheet) =>
     `${API_BASE}/batches/${encodeURIComponent(name)}${sheet ? `?sheet=${sheet}` : ''}`,
-  upload:           `${API_BASE}/upload`,
   // Current-tasks endpoint — polled every 60s from the BatchTable
   currentTasks: (sheet) => `${API_BASE}/current-tasks${sheet ? `?sheet=${sheet}` : ''}`,
   // Status report endpoint — live DB2 data for the Status Report tab
