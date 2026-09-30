@@ -48,14 +48,12 @@ export function AppThemeProvider({ children }) {
         components: {
           MuiContainer: {
             styleOverrides: {
-              // xl container: fills to 1600px then stays centred with breathing room
               maxWidthXl: { maxWidth: '1600px !important' },
             },
           },
           MuiTableCell: {
             styleOverrides: {
               head: { fontWeight: 700 },
-              // Slightly more padding on large screens for improved readability
               root: {
                 '@media (min-width: 1536px)': { paddingLeft: '12px', paddingRight: '12px' },
               },
@@ -64,8 +62,24 @@ export function AppThemeProvider({ children }) {
           MuiCard: {
             styleOverrides: {
               root: {
-                // Cards breathe more on large screens
+                // elevation=0 cards use a single thin border token instead of a
+                // drop-shadow so they don't visually double-up on the page background.
+                // The border colour adapts automatically to light / dark mode via
+                // the theme's divider token (rgba(0,0,0,0.12) / rgba(255,255,255,0.12)).
+                '&.MuiPaper-elevation0': {
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
+                },
                 '@media (min-width: 1536px)': { borderRadius: '10px' },
+              },
+            },
+          },
+          // Paper elevation=0: same single-border treatment as Card
+          MuiPaper: {
+            styleOverrides: {
+              elevation0: {
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
               },
             },
           },

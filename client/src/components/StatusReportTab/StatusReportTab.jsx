@@ -277,15 +277,14 @@ export function StatusReportTab({ enabled }) {
         </Alert>
       )}
 
-      {/* ── Table ── */}
+      {/* ── Table (elevation=0 — single border from theme, no shadow stacking) ── */}
       {showTable && (
         <TableContainer
           component={Paper}
-          elevation={1}
+          elevation={0}
           sx={{
             width:     '100%',
             overflowX: 'auto',
-            // maxHeight scales with screen height — taller screens show more rows
             maxHeight: { xs: 'calc(100vh - 340px)', xl: 'calc(100vh - 300px)' },
             minHeight: 200,
           }}

@@ -16,7 +16,8 @@ import { useSummary } from '../../hooks/useBatches';
  */
 const StatCard = React.memo(function StatCard({ label, value, color }) {
   return (
-    <Card elevation={2} sx={{ height: '100%' }}>
+    // elevation={0} → single thin border from theme (no drop-shadow doubling)
+    <Card elevation={0} sx={{ height: '100%' }}>
       <CardContent
         sx={{
           p: { xs: 1.5, sm: 2, lg: 2.5 },

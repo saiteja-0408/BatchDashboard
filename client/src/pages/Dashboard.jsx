@@ -12,7 +12,7 @@
 
 import React, { useMemo } from 'react';
 import {
-  Box, Container, Typography, Button, Stack, Divider,
+  Box, Container, Typography, Button, Stack,
 } from '@mui/material';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import RefreshIcon      from '@mui/icons-material/Refresh';
@@ -136,9 +136,9 @@ export default function Dashboard() {
       {/* Summary statistics */}
       <SummaryCards />
 
-      <Divider sx={{ mb: 2 }} />
-
       {/* Sheet selector tabs — Benefits | Tax | Status Report */}
+      {/* Divider removed: SheetTabs already renders a borderBottom, and the cards
+          above provide sufficient visual separation through spacing alone. */}
       <SheetTabs />
 
       {isStatusReportTab ? (

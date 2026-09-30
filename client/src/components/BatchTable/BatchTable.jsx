@@ -228,14 +228,14 @@ export function BatchTable({ batches, isLoading, isError }) {
 
   // ── Desktop table layout ──────────────────────────────────────────────────
   return (
+    // elevation={0} — theme provides a single 1px border; avoids a drop-shadow
+    // stacking on top of the FilterPanel/SearchBar visual separation above.
     <TableContainer
       component={Paper}
-      elevation={2}
+      elevation={0}
       sx={{
         overflowX: 'auto',
         width:     '100%',
-        // stickyHeader needs an explicit maxHeight — scale with viewport height
-        // so large screens show more rows without scrolling the whole page.
         maxHeight: { xs: 'none', md: 'calc(100vh - 320px)', xl: 'calc(100vh - 280px)' },
       }}
     >
