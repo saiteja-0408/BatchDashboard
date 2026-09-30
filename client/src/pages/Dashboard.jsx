@@ -80,7 +80,7 @@ export default function Dashboard() {
     : null;
 
   return (
-    <Container maxWidth="xl" sx={{ py: 3 }}>
+    <Container maxWidth="xl" sx={{ py: 3, px: { xs: 1.5, sm: 2, md: 3 }, overflowX: 'hidden' }}>
       {/* Page heading */}
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
         <Box>
