@@ -46,11 +46,6 @@ export function AppThemeProvider({ children }) {
         },
         // ── Global component overrides ────────────────────────────────────────
         components: {
-          MuiContainer: {
-            styleOverrides: {
-              maxWidthXl: { maxWidth: '1600px !important' },
-            },
-          },
           MuiTableCell: {
             styleOverrides: {
               head: { fontWeight: 700 },

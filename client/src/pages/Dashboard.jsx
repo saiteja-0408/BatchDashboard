@@ -81,12 +81,11 @@ export default function Dashboard() {
 
   return (
     /*
-     * Container: maxWidth="xl" maps to the 1600px cap set in ThemeContext.
-     * py scales up on xl+ so the dashboard breathes on large screens.
-     * px uses stepped values so content never hugs the edge on any viewport.
+     * maxWidth={false} — fills the full viewport width at every screen size.
+     * py/px props provide the only inset; no centred-column cap is applied.
      */
     <Container
-      maxWidth="xl"
+      maxWidth={false}
       sx={{
         py:        { xs: 2, sm: 3, lg: 4 },
         px:        { xs: 1.5, sm: 2, md: 3, lg: 4 },

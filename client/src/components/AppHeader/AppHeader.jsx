@@ -16,18 +16,11 @@ export function AppHeader() {
 
   return (
     <AppBar position="sticky" elevation={1} color="primary">
-      {/*
-        Inner Toolbar is constrained to the same max-width as the dashboard
-        Container (1600px) so the header content stays aligned with page content
-        on 1440p / 4K screens instead of stretching edge-to-edge.
-      */}
+      {/* Toolbar fills full width — matches Dashboard maxWidth={false} */}
       <Toolbar
         sx={{
           gap: 2,
-          maxWidth: '1600px',
-          width: '100%',
-          mx: 'auto',
-          px: { xs: 1.5, sm: 2, md: 3 },
+          px: { xs: 1.5, sm: 2, md: 3, lg: 4 },
         }}
       >
         <Typography
