@@ -86,7 +86,15 @@ async function getStatusReport(req, res) {
   }
 
   // ── Cache miss (or force) — query DB2 ─────────────────────────────────────
-  const rows = await queryDb2(STATUS_REPORT_SQL);
+  const rawRows = await queryDb2(STATUS_REPORT_SQL);
+
+  // DB2 returns column names in UPPERCASE — normalise to lowercase so the
+  // frontend column definitions (job_name, start_time, …) match correctly.
+  const rows = rawRows.map((row) =>
+    Object.fromEntries(
+      Object.entries(row).map(([k, v]) => [k.toLowerCase(), v])
+    )
+  );
 
   // Persist to cache — always refresh on force=true too
   cache.set(STATUS_REPORT_CACHE_KEY, rows, STATUS_REPORT_TTL_MS);
