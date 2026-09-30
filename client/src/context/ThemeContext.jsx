@@ -30,6 +30,11 @@ export function AppThemeProvider({ children }) {
         typography: {
           fontFamily: '-apple-system, "Segoe UI", system-ui, sans-serif',
           fontSize: 14,
+          h5: { fontSize: 'clamp(1.1rem, 2.5vw, 1.5rem)', fontWeight: 700 },
+          h6: { fontSize: 'clamp(1rem, 2vw, 1.25rem)' },
+          h4: { fontSize: 'clamp(1.5rem, 4vw, 2.125rem)' },
+          subtitle2: { fontSize: 'clamp(0.75rem, 1.5vw, 0.875rem)' },
+          caption: { fontSize: 'clamp(0.65rem, 1.2vw, 0.75rem)' },
         },
         components: {
           MuiTableCell: {

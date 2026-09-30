@@ -14,11 +14,16 @@ import { useSummary } from '../../hooks/useBatches';
 const StatCard = React.memo(function StatCard({ label, value, color }) {
   return (
     <Card elevation={2} sx={{ height: '100%' }}>
-      <CardContent>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
+      <CardContent sx={{ p: { xs: 1.5, sm: 2 }, '&:last-child': { pb: { xs: 1.5, sm: 2 } } }}>
+        <Typography variant="body2" color="text.secondary" gutterBottom noWrap>
           {label}
         </Typography>
-        <Typography variant="h4" fontWeight={700} color={color || 'text.primary'}>
+        <Typography
+          variant="h4"
+          fontWeight={700}
+          color={color || 'text.primary'}
+          sx={{ fontSize: { xs: '1.6rem', sm: '2rem', md: '2.125rem' } }}
+        >
           {value}
         </Typography>
       </CardContent>

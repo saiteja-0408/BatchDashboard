@@ -82,7 +82,14 @@ export default function Dashboard() {
   return (
     <Container maxWidth="xl" sx={{ py: 3, px: { xs: 1.5, sm: 2, md: 3 }, overflowX: 'hidden' }}>
       {/* Page heading */}
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'flex-start', sm: 'flex-start' }}
+        flexWrap="wrap"
+        gap={1}
+        mb={2}
+      >
         <Box>
           <Typography variant="h5" fontWeight={700}>Batch Job Monitor</Typography>
           {lastUpdated && !isStatusReportTab && (
@@ -91,9 +98,9 @@ export default function Dashboard() {
             </Typography>
           )}
         </Box>
-        {/* Export button — only shown on batch tabs */}
+        {/* Export buttons — only shown on batch tabs */}
         {!isStatusReportTab && (
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Button
               size="small"
               startIcon={<RefreshIcon />}

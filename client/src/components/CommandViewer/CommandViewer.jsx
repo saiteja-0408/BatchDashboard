@@ -67,7 +67,7 @@ function CommandBlock({ label, value }) {
         sx={{
           m: 0,
           px: 1.5, py: 1.5,
-          fontSize: '0.82rem',
+          fontSize: 'clamp(0.72rem, 1.5vw, 0.82rem)',
           fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',

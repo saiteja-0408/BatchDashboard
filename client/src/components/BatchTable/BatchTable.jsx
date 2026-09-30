@@ -117,7 +117,7 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
       onKeyDown={handleKeyDown}
     >
       {/* Warning icon cell */}
-      <TableCell sx={{ px: 1, width: 32 }}>
+      <TableCell sx={{ px: 1, width: 28, minWidth: 28 }}>
         {!isValid && (
           <Tooltip title={`Unknown schedule: "${batch.scheduleName}"`}>
             <WarningAmberIcon fontSize="small" color="warning" />
@@ -131,7 +131,7 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
         )}
       </TableCell>
       <TableCell
-        sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        sx={{ maxWidth: { xs: 140, sm: 200, md: 260 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
       >
         <Tooltip title={batch.arguments || ''} placement="top">
           <span>
@@ -228,12 +228,12 @@ export function BatchTable({ batches, isLoading, isError }) {
 
   // ── Desktop table layout ──────────────────────────────────────────────────
   return (
-    <TableContainer component={Paper} elevation={2}>
+    <TableContainer component={Paper} elevation={2} sx={{ overflowX: 'auto', width: '100%' }}>
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
             {/* Warning indicator column — no sort */}
-            <TableCell sx={{ width: 32 }} />
+            <TableCell sx={{ width: 28, minWidth: 28 }} />
             {SORTABLE_COLUMNS.map((col) => (
               <TableCell key={col.id} sx={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
                 <TableSortLabel
@@ -245,7 +245,7 @@ export function BatchTable({ batches, isLoading, isError }) {
                 </TableSortLabel>
               </TableCell>
             ))}
-            <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 130 }}>
+            <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110 }}>
               Current Task
             </TableCell>
           </TableRow>

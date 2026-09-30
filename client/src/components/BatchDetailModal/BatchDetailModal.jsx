@@ -70,6 +70,14 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
       maxWidth="lg"
       fullWidth
       scroll="paper"
+      fullScreen={false}
+      sx={{
+        '& .MuiDialog-paper': {
+          m: { xs: 1, sm: 2 },
+          maxHeight: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 32px)' },
+          width: { xs: 'calc(100% - 16px)', sm: undefined },
+        },
+      }}
     >
       <DialogTitle
         sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', pb: 1 }}
@@ -94,7 +102,12 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
             <Chip label={sheetLabel} size="small" variant="outlined" sx={{ mr: 0.5 }} />
           </Box>
         </Box>
-        <IconButton size="small" onClick={handleClose} sx={{ mt: 0.5 }}>
+        <IconButton
+          size="small"
+          onClick={handleClose}
+          aria-label="Close"
+          sx={{ mt: 0.5, width: 44, height: 44, flexShrink: 0 }}
+        >
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>

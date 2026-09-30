@@ -27,7 +27,12 @@ export function AppHeader() {
         </Typography>
 
         <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
-          <IconButton color="inherit" onClick={toggleDarkMode} size="small">
+          <IconButton
+            color="inherit"
+            onClick={toggleDarkMode}
+            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            sx={{ width: 44, height: 44 }}
+          >
             {isDark ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
         </Tooltip>

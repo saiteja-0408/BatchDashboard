@@ -104,7 +104,7 @@ export function CurrentTaskBadge({ currentTask, isLoading }) {
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ fontSize: '0.68rem', textAlign: 'center', lineHeight: 1.2 }}
+            sx={{ fontSize: 'clamp(0.6rem, 1.1vw, 0.68rem)', textAlign: 'center', lineHeight: 1.2 }}
           >
             {fmtNextRun(currentTask.nextRun)}
           </Typography>
