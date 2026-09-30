@@ -28,8 +28,6 @@ export default defineConfig({
             return 'vendor-mui';
           if (id.includes('node_modules/@tanstack'))
             return 'vendor-query';
-          if (id.includes('node_modules/recharts'))
-            return 'vendor-recharts';
           if (id.includes('node_modules/axios'))
             return 'vendor-axios';
         },
