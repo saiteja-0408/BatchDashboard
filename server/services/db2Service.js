@@ -81,11 +81,14 @@ function logStartupMode() {
     const missing = getMissingPgVars();
     if (missing.length > 0) {
       console.warn(
-        `[db2Service] Mode: MOCK  (STATUS_REPORT_DB=pg but the following required ` +
-        `.env variables are missing: ${missing.join(', ')})\n` +
-        '             Set all four variables to switch to live PostgreSQL mode:\n' +
+        `[db2Service] Mode: MOCK  (STATUS_REPORT_DB=pg but configuration is incomplete)\n` +
+        '             Provide either PG_CONNECTION_URL or all of:\n' +
         '               PG_HOST, PG_DATABASE, PG_USER, PG_PASSWORD'
       );
+    } else if (process.env.PG_CONNECTION_URL) {
+      // Mask password in the URL for safe logging
+      const maskedUrl = process.env.PG_CONNECTION_URL.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:****@');
+      console.log(`[db2Service] Mode: LIVE  (STATUS_REPORT_DB=pg — ${maskedUrl})`);
     } else {
       console.log(
         `[db2Service] Mode: LIVE  (STATUS_REPORT_DB=pg — connecting to ` +
