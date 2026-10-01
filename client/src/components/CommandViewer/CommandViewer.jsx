@@ -27,8 +27,9 @@ const COMMAND_DEFS = [
 
 /**
  * Single command block: label chip, monospace code, copy button.
+ * Memoised — avoids remounting when the same batch is re-opened.
  */
-function CommandBlock({ label, value }) {
+const CommandBlock = React.memo(function CommandBlock({ label, value }) {
   const { copy, copied } = useCopyToClipboard();
 
   return (
@@ -80,7 +81,7 @@ function CommandBlock({ label, value }) {
       </Box>
     </Box>
   );
-}
+});
 
 CommandBlock.propTypes = {
   label: PropTypes.string.isRequired,

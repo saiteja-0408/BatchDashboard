@@ -90,6 +90,21 @@ BatchCard.propTypes = {
   onClick:     PropTypes.func.isRequired,
 };
 
+// ── Static sx variants hoisted outside BatchRow ───────────────────────────────
+// Defining these outside the component means Emotion generates the CSS class
+// exactly once at module load time instead of on every render of every row.
+// With 800+ rows and a re-render cycle on each 60s poll, this eliminates
+// 800+ repeated Emotion hash lookups per cycle.
+const ROW_SX_VALID = {
+  cursor: 'pointer',
+  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
+};
+const ROW_SX_INVALID = {
+  cursor: 'pointer',
+  borderLeft: '3px solid #ed6c02',
+  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
+};
+
 /**
  * Single desktop table row — memoised so only the rows whose currentTask
  * actually changed re-render during the 60s poll cycle.
@@ -108,11 +123,7 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
     <TableRow
       hover
       tabIndex={0}
-      sx={{
-        cursor: 'pointer',
-        borderLeft: isValid ? undefined : '3px solid #ed6c02',
-        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
-      }}
+      sx={isValid ? ROW_SX_VALID : ROW_SX_INVALID}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
@@ -214,9 +225,9 @@ export function BatchTable({ batches, isLoading, isError }) {
     if (isLoading) return <Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2 }} />;
     return (
       <Box>
-        {sortedData.map((b, i) => (
+        {sortedData.map((b) => (
           <BatchCard
-            key={`${b.batchName}-${i}`}
+            key={b.batchName}
             batch={b}
             currentTask={currentTaskMap[b.batchName]}
             onClick={openBatchModal}
@@ -271,9 +282,9 @@ export function BatchTable({ batches, isLoading, isError }) {
           {isLoading ? (
             <SkeletonRows extraCol />
           ) : (
-            sortedData.map((batch, i) => (
+            sortedData.map((batch) => (
               <BatchRow
-                key={`${batch.batchName}-${i}`}
+                key={batch.batchName}
                 batch={batch}
                 currentTask={currentTaskMap[batch.batchName]}
                 ctLoading={ctLoading}
