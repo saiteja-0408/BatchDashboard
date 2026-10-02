@@ -39,6 +39,7 @@ export const COLUMN_LABELS = {
   batchName:     'Batch Name',
   arguments:     'Arguments',
   scheduleName:  'Schedule Name / Job Group',
+  triggerNeeded: 'Trigger Needed',
   sheetSource:   'Sheet',
   logDir:        'Log Directory',
   scheduleValid: 'Schedule Valid',
@@ -47,9 +48,10 @@ export const COLUMN_LABELS = {
 // ── Table: sortable column definitions ───────────────────────────────────────
 // 'sheetSource' column removed — tab already indicates which sheet is active.
 export const SORTABLE_COLUMNS = [
-  { id: 'batchName',    label: 'Batch Name' },
-  { id: 'scheduleName', label: 'Schedule Name / Job Group' },
-  { id: 'arguments',    label: 'Arguments' },
+  { id: 'batchName',     label: 'Batch Name' },
+  { id: 'scheduleName',  label: 'Schedule Name / Job Group' },
+  { id: 'arguments',     label: 'Arguments' },
+  { id: 'triggerNeeded', label: 'Trigger Needed' },
 ];
 
 // ── Complete approved schedule name list (mirrors server/config/constants.js) ─

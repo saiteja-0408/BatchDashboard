@@ -1,10 +1,11 @@
 /**
  * batchModel.js — defines the canonical batch data shape and validation helpers.
  *
- * The new Excel schema has three columns per row:
- *   batchName     — from "Batch Name/Job Name"
- *   arguments     — from "Batch Arguments/JVM Arguments" (may be empty)
- *   scheduleName  — from "Schedule Name/ Job Group Name"
+ * Excel columns per row:
+ *   batchName      — from "Batch Name/Job Name"
+ *   arguments      — from "Batch Arguments/JVM Arguments" (may be empty)
+ *   scheduleName   — from "Schedule Name/ Job Group Name"
+ *   triggerNeeded  — from "Trigger Needed"; normalised to 'Y' | 'N' | ''
  *
  * Plus two fields derived by the parser:
  *   sheetSource   — 'benefits' | 'tax'
@@ -21,6 +22,7 @@ const { VALID_SCHEDULE_NAMES } = require('../config/constants');
  * @property {string}  batchName      - Batch / job name (primary key — must be unique per sheet)
  * @property {string}  arguments      - JVM / batch arguments; empty string if none
  * @property {string}  scheduleName   - Schedule Name / Job Group Name from Excel
+ * @property {string}  triggerNeeded  - 'Y' | 'N' | '' — whether a trigger is needed
  * @property {string}  sheetSource    - 'benefits' | 'tax'
  * @property {string}  logDir         - cd command for the log directory
  * @property {boolean} scheduleValid  - true if scheduleName is in the approved list
@@ -35,12 +37,27 @@ const { VALID_SCHEDULE_NAMES } = require('../config/constants');
 function createBatch(raw) {
   const safeStr = (v) => (v === undefined || v === null ? '' : String(v).trim());
 
+  /**
+   * Normalise Trigger Needed to uppercase 'Y' or 'N'.
+   * Accepts: 'Y'/'y'/'yes'/'true'/true → 'Y'
+   *          'N'/'n'/'no'/'false'/false → 'N'
+   *          anything else (including empty) → ''
+   */
+  const normTrigger = (v) => {
+    if (v === undefined || v === null || v === '') return '';
+    const s = String(v).trim().toLowerCase();
+    if (s === 'y' || s === 'yes' || s === 'true') return 'Y';
+    if (s === 'n' || s === 'no'  || s === 'false') return 'N';
+    return '';
+  };
+
   const batch = {
-    batchName:    safeStr(raw.batchName),
-    arguments:    safeStr(raw.arguments),
-    scheduleName: safeStr(raw.scheduleName),
-    sheetSource:  safeStr(raw.sheetSource),   // set by parser
-    logDir:       safeStr(raw.logDir),         // set by parser
+    batchName:     safeStr(raw.batchName),
+    arguments:     safeStr(raw.arguments),
+    scheduleName:  safeStr(raw.scheduleName),
+    triggerNeeded: normTrigger(raw.triggerNeeded),
+    sheetSource:   safeStr(raw.sheetSource),   // set by parser
+    logDir:        safeStr(raw.logDir),         // set by parser
   };
 
   // Validate schedule name against the approved list (exact case match)

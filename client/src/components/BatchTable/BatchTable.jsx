@@ -25,7 +25,7 @@ import React, { useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TableSortLabel, Paper, Typography, Box, Card, CardContent,
+  TableSortLabel, Paper, Typography, Box, Chip, Card, CardContent,
   CardActionArea, Skeleton, Stack, Tooltip, useMediaQuery, useTheme,
 } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
@@ -40,6 +40,32 @@ import { SORTABLE_COLUMNS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
  * When false: no API polling, no column header, no cell rendering.
  */
 const SHOW_CURRENT_TASK = false;
+
+/**
+ * Small chip that shows Y (green) or N (red) for Trigger Needed.
+ * Empty/unknown values render an em-dash.
+ */
+function TriggerBadge({ value }) {
+  if (value === 'Y') {
+    return (
+      <Chip
+        label="Y"
+        size="small"
+        sx={{ bgcolor: 'success.main', color: 'success.contrastText', fontWeight: 700, fontSize: '0.72rem', height: 20 }}
+      />
+    );
+  }
+  if (value === 'N') {
+    return (
+      <Chip
+        label="N"
+        size="small"
+        sx={{ bgcolor: 'error.main', color: 'error.contrastText', fontWeight: 700, fontSize: '0.72rem', height: 20 }}
+      />
+    );
+  }
+  return <Typography variant="caption" color="text.secondary">—</Typography>;
+}
 
 /** Loading skeleton rows */
 function SkeletonRows({ count = 8 }) {
@@ -88,6 +114,12 @@ const BatchCard = React.memo(function BatchCard({ batch, currentTask, onClick })
           <Typography variant="caption" color="text.secondary" display="block">
             {batch.scheduleName || '—'}
           </Typography>
+          {batch.triggerNeeded && (
+            <Stack direction="row" spacing={0.5} alignItems="center" mt={0.5}>
+              <Typography variant="caption" color="text.secondary">Trigger:</Typography>
+              <TriggerBadge value={batch.triggerNeeded} />
+            </Stack>
+          )}
         </CardContent>
       </CardActionArea>
     </Card>
@@ -160,6 +192,10 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
             )}
           </span>
         </Tooltip>
+      </TableCell>
+      {/* Trigger Needed cell */}
+      <TableCell sx={{ minWidth: 90 }}>
+        <TriggerBadge value={batch.triggerNeeded} />
       </TableCell>
       {/* Current Task cell — hidden when SHOW_CURRENT_TASK is false */}
       {SHOW_CURRENT_TASK && (
