@@ -24,9 +24,10 @@ import { BatchTable }       from '../components/BatchTable/BatchTable';
 import { BatchDetailModal } from '../components/BatchDetailModal/BatchDetailModal';
 import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab';
 
-import { useBatchContext }  from '../context/BatchContext';
-import { useAllBatches }    from '../hooks/useBatches';
-import { uploadSheet }      from '../services/apiService';
+import { useBatchContext }   from '../context/BatchContext';
+import { useAllBatches }     from '../hooks/useBatches';
+import { uploadSheet }       from '../services/apiService';
+import { useStatusReport }   from '../hooks/useStatusReport';
 
 export default function Dashboard() {
   const queryClient  = useQueryClient();
@@ -39,6 +40,18 @@ export default function Dashboard() {
   const [snackbar,     setSnackbar]     = useState({ open: false, message: '', severity: 'success' });
 
   const isStatusReportTab = activeSheet === 'status-report';
+
+  // Status Report hook — enabled only on the Status Report tab.
+  // Shares the same React Query cache key as the hook inside StatusReportTab,
+  // so this call never triggers a second network request.
+  const {
+    isFetching: srFetching,
+    refresh:    srRefresh,
+    data:       srEnvelope,
+  } = useStatusReport(isStatusReportTab);
+
+  const srCachedAt = srEnvelope?.cachedAt ?? null;
+  const srCacheHit = srEnvelope?.cacheHit ?? null;
 
   // Only fetch batch data when on the Benefits or Tax tab.
   const { data: allBatches, isLoading, isError, dataUpdatedAt } = useAllBatches(
@@ -132,44 +145,68 @@ export default function Dashboard() {
       >
         <Box>
           <Typography variant="h5" fontWeight={700}>Batch Monitoring</Typography>
-          {lastUpdated && !isStatusReportTab && (
+          {/* Last-updated caption — batch tabs show React Query timestamp; Status Report shows DB cache time */}
+          {isStatusReportTab && srCachedAt && (
+            <Typography variant="caption" color="text.secondary">
+              Last updated: {new Date(srCachedAt).toLocaleTimeString()}
+              {srCacheHit === true  && ' (cached)'}
+              {srCacheHit === false && ' (live)'}
+            </Typography>
+          )}
+          {!isStatusReportTab && lastUpdated && (
             <Typography variant="caption" color="text.secondary">
               Last refreshed: {lastUpdated}
             </Typography>
           )}
         </Box>
 
-        {/* Action buttons — only shown on Benefits / Tax tabs */}
-        {!isStatusReportTab && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-            <Button
-              size="small"
-              startIcon={<RefreshIcon />}
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['batches'] })}
-            >
-              Refresh
-            </Button>
-
-            {/* Hidden file input — triggered programmatically */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              style={{ display: 'none' }}
-              onChange={handleFileChange}
-            />
-
+        {/* Action buttons — right side of header */}
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+          {isStatusReportTab ? (
+            /* ── Status Report: single Refresh button ── */
             <Button
               size="small"
               variant="outlined"
-              startIcon={uploading ? <CircularProgress size={14} color="inherit" /> : <UploadFileIcon />}
-              onClick={handleUploadClick}
-              disabled={uploading}
+              startIcon={srFetching
+                ? <CircularProgress size={14} color="inherit" />
+                : <RefreshIcon />}
+              onClick={srRefresh}
+              disabled={srFetching}
             >
-              {uploading ? 'Uploading…' : `Upload ${activeSheet === 'benefits' ? 'Benefits' : 'Tax'} Sheet`}
+              Refresh
             </Button>
-          </Stack>
-        )}
+          ) : (
+            /* ── Benefits / Tax: Refresh + Upload ── */
+            <>
+              <Button
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['batches'] })}
+              >
+                Refresh
+              </Button>
+
+              {/* Hidden file input — triggered programmatically */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={uploading ? <CircularProgress size={14} color="inherit" /> : <UploadFileIcon />}
+                onClick={handleUploadClick}
+                disabled={uploading}
+              >
+                {uploading ? 'Uploading…' : `Upload ${activeSheet === 'benefits' ? 'Benefits' : 'Tax'} Sheet`}
+              </Button>
+            </>
+          )}
+        </Stack>
       </Stack>
 
       {/* Sheet selector tabs — Status Report | Benefits | Tax */}
