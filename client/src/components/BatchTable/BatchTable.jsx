@@ -240,7 +240,7 @@ export function BatchTable({ batches, isLoading, isError }) {
   // ── Desktop table layout ──────────────────────────────────────────────────
   return (
     // elevation={0} — theme provides a single 1px border; avoids a drop-shadow
-    // stacking on top of the FilterPanel/SearchBar visual separation above.
+    // stacking on top of the SearchBar visual separation above.
     <TableContainer
       component={Paper}
       elevation={0}

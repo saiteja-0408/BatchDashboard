@@ -1,10 +1,9 @@
 /**
  * Dashboard.jsx — main landing page.
  *
- * Orchestrates: summary cards, sheet tabs, search bar, filter panel,
- * batch table, and detail modal. The active sheet (benefits / tax) drives
- * which data is shown. Filters and search are applied client-side on the
- * already-fetched batch list.
+ * Orchestrates: sheet tabs, search bar, batch table, and detail modal.
+ * The active sheet (benefits / tax) drives which data is shown.
+ * Search is applied client-side on the already-fetched batch list.
  *
  * When activeSheet === 'status-report', the batch table and its controls are
  * replaced by the StatusReportTab component.
@@ -20,19 +19,17 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { SheetTabs }        from '../components/SheetTabs/SheetTabs';
 import { SearchBar }        from '../components/SearchBar/SearchBar';
-import { FilterPanel }      from '../components/FilterPanel/FilterPanel';
 import { BatchTable }       from '../components/BatchTable/BatchTable';
 import { BatchDetailModal } from '../components/BatchDetailModal/BatchDetailModal';
 import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab';
 
-import { useBatchContext }       from '../context/BatchContext';
-import { useAllBatches }         from '../hooks/useBatches';
-import { exportToExcel }         from '../utils/helpers';
-import { getScheduleFrequency }  from '../utils/constants';
+import { useBatchContext }  from '../context/BatchContext';
+import { useAllBatches }    from '../hooks/useBatches';
+import { exportToExcel }    from '../utils/helpers';
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
-  const { searchQuery, activeSheet, filters } = useBatchContext();
+  const { searchQuery, activeSheet } = useBatchContext();
 
   const isStatusReportTab = activeSheet === 'status-report';
 
@@ -44,33 +41,21 @@ export default function Dashboard() {
   );
 
   /**
-   * Client-side filter + search applied on the already-fetched batch list.
+   * Client-side search applied on the already-fetched batch list.
    * Not used when the Status Report tab is active.
    */
   const filteredBatches = useMemo(() => {
     if (isStatusReportTab || !allBatches) return [];
 
-    return allBatches.filter((b) => {
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const matchesSearch =
-          b.batchName.toLowerCase().includes(q)    ||
-          b.scheduleName.toLowerCase().includes(q) ||
-          (b.arguments || '').toLowerCase().includes(q);
-        if (!matchesSearch) return false;
-      }
+    if (!searchQuery) return allBatches;
 
-      if (filters.frequency) {
-        const freq = getScheduleFrequency(b.scheduleName);
-        if (freq !== filters.frequency) return false;
-      }
-
-      if (filters.scheduleValid === 'valid'   && !b.scheduleValid) return false;
-      if (filters.scheduleValid === 'invalid' &&  b.scheduleValid) return false;
-
-      return true;
-    });
-  }, [allBatches, searchQuery, filters, isStatusReportTab]);
+    const q = searchQuery.toLowerCase();
+    return allBatches.filter((b) =>
+      b.batchName.toLowerCase().includes(q)    ||
+      b.scheduleName.toLowerCase().includes(q) ||
+      (b.arguments || '').toLowerCase().includes(q)
+    );
+  }, [allBatches, searchQuery, isStatusReportTab]);
 
   const handleExport = () => exportToExcel(filteredBatches, `${activeSheet}_batches_export`);
 
@@ -132,22 +117,16 @@ export default function Dashboard() {
       </Stack>
 
       {/* Sheet selector tabs — Status Report | Benefits | Tax */}
-      {/* Divider removed: SheetTabs already renders a borderBottom, and the cards
-          above provide sufficient visual separation through spacing alone. */}
       <SheetTabs />
 
       {isStatusReportTab ? (
         /* ── Status Report tab — full-width table, no search/filter ── */
         <StatusReportTab enabled />
       ) : (
-        /* ── Benefits / Tax tabs — search, filter, batch table ── */
+        /* ── Benefits / Tax tabs — search bar + batch table ── */
         <>
-          <Box mb={1.5}>
-            <SearchBar />
-          </Box>
-
           <Box mb={2}>
-            <FilterPanel />
+            <SearchBar />
           </Box>
 
           <BatchTable

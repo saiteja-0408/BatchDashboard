@@ -3,16 +3,16 @@
  *
  * WHY TWO CONTEXTS?
  * -----------------
- * Previously a single context held ALL state (search, filters, activeSheet,
+ * Previously a single context held ALL state (search, activeSheet,
  * selectedBatch, isModalOpen). Every time a row was clicked, selectedBatch
  * and isModalOpen changed, which caused the single Provider value object to be
  * recreated, which triggered every consumer — including BatchTable (800+ rows)
  * — to re-render even though BatchTable does not care about the modal state.
  *
  * Split:
- *   BatchDataContext  — search, filters, activeSheet, openBatchModal reference.
- *                       Changes only on search/filter/tab events. BatchTable,
- *                       SearchBar, FilterPanel, SheetTabs subscribe here.
+ *   BatchDataContext  — search, activeSheet, openBatchModal reference.
+ *                       Changes only on search/tab events. BatchTable,
+ *                       SearchBar, SheetTabs subscribe here.
  *
  *   BatchModalContext — selectedBatch, isModalOpen, closeBatchModal.
  *                       Changes on every row click / modal close. ONLY
@@ -39,13 +39,6 @@ import PropTypes from 'prop-types';
 const BatchDataContext  = createContext(null);
 const BatchModalContext = createContext(null);
 
-// ── Default filter state ──────────────────────────────────────────────────────
-
-const DEFAULT_FILTERS = {
-  frequency:     '',  // 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'biweekly' | 'on_demand' | ''
-  scheduleValid: '',  // 'valid' | 'invalid' | ''
-};
-
 // ── Modal state reducer ───────────────────────────────────────────────────────
 // Single dispatch instead of two sequential setState calls eliminates the
 // extra render cycle that occurred between setSelectedBatch and setIsModalOpen.
@@ -68,8 +61,8 @@ function modalReducer(state, action) {
 // ── Public hooks ──────────────────────────────────────────────────────────────
 
 /**
- * Hook for components that need search/filter/sheet state and openBatchModal.
- * BatchTable, SearchBar, FilterPanel, SheetTabs, Dashboard use this.
+ * Hook for components that need search/sheet state and openBatchModal.
+ * BatchTable, SearchBar, SheetTabs, Dashboard use this.
  * Does NOT re-render when a row is clicked.
  */
 export function useBatchContext() {
@@ -91,10 +84,9 @@ export function useBatchModal() {
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function BatchProvider({ children }) {
-  // ── Data / UI state (search, filters, active tab) ─────────────────────────
+  // ── Data / UI state (search, active tab) ──────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSheet, setActiveSheet] = useState('benefits');
-  const [filters, setFilters]         = useState(DEFAULT_FILTERS);
 
   // ── Modal state via reducer (single dispatch = single render pass) ─────────
   const [modalState, dispatchModal] = useReducer(modalReducer, MODAL_INITIAL);
@@ -102,22 +94,9 @@ export function BatchProvider({ children }) {
   // ── Stable callbacks (data context) ───────────────────────────────────────
   const clearSearch = useCallback(() => setSearchQuery(''), []);
 
-  const updateFilter = useCallback((key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  const clearFilter = useCallback((key) => {
-    setFilters((prev) => ({ ...prev, [key]: '' }));
-  }, []);
-
-  const clearAllFilters = useCallback(() => {
-    setFilters(DEFAULT_FILTERS);
-    setSearchQuery('');
-  }, []);
-
   const handleSetActiveSheet = useCallback((sheet) => {
     setActiveSheet(sheet);
-    setFilters(DEFAULT_FILTERS);
+    setSearchQuery('');
   }, []);
 
   // openBatchModal is part of the DATA context so BatchTable can call it.
@@ -142,12 +121,10 @@ export function BatchProvider({ children }) {
   const dataValue = useMemo(() => ({
     searchQuery, setSearchQuery, clearSearch,
     activeSheet, setActiveSheet: handleSetActiveSheet,
-    filters, updateFilter, clearFilter, clearAllFilters,
     openBatchModal,
   }), [
     searchQuery, clearSearch,
     activeSheet, handleSetActiveSheet,
-    filters, updateFilter, clearFilter, clearAllFilters,
     openBatchModal,
   ]);
 
