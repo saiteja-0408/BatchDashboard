@@ -24,7 +24,7 @@ export const API_PATHS = {
 export const CURRENT_TASKS_REFRESH_MS = 60_000;
 
 // ── Sheet sources ─────────────────────────────────────────────────────────────
-export const SHEET_SOURCES = ['benefits', 'tax', 'status-report'];
+export const SHEET_SOURCES = ['status-report', 'benefits', 'tax'];
 
 export const SHEET_LABELS = {
   benefits:        'Benefits',
