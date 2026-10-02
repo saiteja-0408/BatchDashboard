@@ -44,12 +44,12 @@ export const COLUMN_LABELS = {
   scheduleValid: 'Schedule Valid',
 };
 
-// ── Table: sortable column definitions (updated for new schema) ───────────────
+// ── Table: sortable column definitions ───────────────────────────────────────
+// 'sheetSource' column removed — tab already indicates which sheet is active.
 export const SORTABLE_COLUMNS = [
   { id: 'batchName',    label: 'Batch Name' },
   { id: 'scheduleName', label: 'Schedule Name / Job Group' },
   { id: 'arguments',    label: 'Arguments' },
-  { id: 'sheetSource',  label: 'Sheet' },
 ];
 
 // ── Complete approved schedule name list (mirrors server/config/constants.js) ─

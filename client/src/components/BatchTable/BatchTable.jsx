@@ -1,10 +1,14 @@
 /**
  * BatchTable.jsx — sortable, clickable batch data table.
  *
- * Columns: [warn] Batch Name | Schedule Name | Arguments | Sheet | Current Task
+ * Columns: [warn] Batch Name | Schedule Name | Arguments
  *
- * The "Current Task" column is shown on both Benefits and Tax tabs.
- * It auto-refreshes every 60 s via the useCurrentTasks hook (React Query polling).
+ * The "Sheet" column has been removed — the active tab already indicates
+ * which sheet is displayed.
+ *
+ * Current Task column is hidden but fully preserved. To re-enable it, flip:
+ *   const SHOW_CURRENT_TASK = true;
+ *
  * On mobile (<600px) renders a card list.
  * Rows support keyboard navigation (Enter key opens detail modal).
  *
@@ -12,9 +16,9 @@
  *   - BatchCard is React.memo'd — only re-renders when its own props change.
  *   - BatchRow is React.memo'd — large lists (800+ rows) avoid full re-renders
  *     on every 60s current-tasks poll by only updating rows whose currentTask changed.
- *   - currentTaskMap is memoised (already was).
- *   - sortedData is memoised inside useSort (already was).
- *   - openBatchModal is stable useCallback from context (already was).
+ *   - currentTaskMap is memoised.
+ *   - sortedData is memoised inside useSort.
+ *   - openBatchModal is stable useCallback from context.
  */
 
 import React, { useMemo, useCallback } from 'react';
@@ -22,17 +26,23 @@ import PropTypes from 'prop-types';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   TableSortLabel, Paper, Typography, Box, Card, CardContent,
-  CardActionArea, Skeleton, Stack, Chip, Tooltip, useMediaQuery, useTheme,
+  CardActionArea, Skeleton, Stack, Tooltip, useMediaQuery, useTheme,
 } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { useBatchContext }    from '../../context/BatchContext';
 import { useSort }            from '../../hooks/useSort';
 import { useCurrentTasks }    from '../../hooks/useBatches';
 import { CurrentTaskBadge }   from '../CurrentTaskBadge/CurrentTaskBadge';
-import { SORTABLE_COLUMNS, SHEET_LABELS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
+import { SORTABLE_COLUMNS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
+
+/**
+ * Feature flag — flip to `true` to restore the Current Task column.
+ * When false: no API polling, no column header, no cell rendering.
+ */
+const SHOW_CURRENT_TASK = false;
 
 /** Loading skeleton rows */
-function SkeletonRows({ count = 8, extraCol = false }) {
+function SkeletonRows({ count = 8 }) {
   return Array.from({ length: count }).map((_, i) => (
     <TableRow key={i}>
       <TableCell />
@@ -41,11 +51,13 @@ function SkeletonRows({ count = 8, extraCol = false }) {
           <Skeleton variant="text" width="80%" />
         </TableCell>
       ))}
-      {extraCol && <TableCell><Skeleton variant="rounded" width={80} height={22} /></TableCell>}
+      {SHOW_CURRENT_TASK && (
+        <TableCell><Skeleton variant="rounded" width={80} height={22} /></TableCell>
+      )}
     </TableRow>
   ));
 }
-SkeletonRows.propTypes = { count: PropTypes.number, extraCol: PropTypes.bool };
+SkeletonRows.propTypes = { count: PropTypes.number };
 
 /**
  * Mobile card for a single batch.
@@ -68,16 +80,13 @@ const BatchCard = React.memo(function BatchCard({ batch, currentTask, onClick })
                   <WarningAmberIcon fontSize="small" color="warning" />
                 </Tooltip>
               )}
-              {currentTask && (
+              {SHOW_CURRENT_TASK && currentTask && (
                 <CurrentTaskBadge currentTask={currentTask} isLoading={false} />
               )}
             </Stack>
           </Stack>
           <Typography variant="caption" color="text.secondary" display="block">
             {batch.scheduleName || '—'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {SHEET_LABELS[batch.sheetSource] || batch.sheetSource}
           </Typography>
         </CardContent>
       </CardActionArea>
@@ -152,21 +161,15 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
           </span>
         </Tooltip>
       </TableCell>
-      <TableCell>
-        <Chip
-          label={SHEET_LABELS[batch.sheetSource] || batch.sheetSource}
-          size="small"
-          variant="outlined"
-          color={batch.sheetSource === 'benefits' ? 'primary' : 'secondary'}
-        />
-      </TableCell>
-      {/* Current Task cell */}
-      <TableCell onClick={stopPropagation} sx={{ py: 0.5 }}>
-        <CurrentTaskBadge
-          currentTask={currentTask}
-          isLoading={ctLoading && !currentTask}
-        />
-      </TableCell>
+      {/* Current Task cell — hidden when SHOW_CURRENT_TASK is false */}
+      {SHOW_CURRENT_TASK && (
+        <TableCell onClick={stopPropagation} sx={{ py: 0.5 }}>
+          <CurrentTaskBadge
+            currentTask={currentTask}
+            isLoading={ctLoading && !currentTask}
+          />
+        </TableCell>
+      )}
     </TableRow>
   );
 });
@@ -186,15 +189,17 @@ export function BatchTable({ batches, isLoading, isError }) {
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch current-task data for the active sheet; re-fetches every 60 s
+  // Current-task polling — only active when SHOW_CURRENT_TASK is enabled.
+  // When disabled the hook returns immediately with no data and no API call.
   const {
     data:      currentTasksEnvelope,
     isLoading: ctLoading,
-  } = useCurrentTasks(activeSheet, true);
+  } = useCurrentTasks(SHOW_CURRENT_TASK ? activeSheet : null, SHOW_CURRENT_TASK);
 
-  // Build a batchName → currentTask lookup map for O(1) cell rendering
+  // Build a batchName → currentTask lookup map for O(1) cell rendering.
+  // Returns an empty object when SHOW_CURRENT_TASK is false.
   const currentTaskMap = useMemo(() => {
-    if (!currentTasksEnvelope?.data) return {};
+    if (!SHOW_CURRENT_TASK || !currentTasksEnvelope?.data) return {};
     return Object.fromEntries(
       currentTasksEnvelope.data.map((r) => [r.batchName, r.currentTask])
     );
@@ -229,7 +234,7 @@ export function BatchTable({ batches, isLoading, isError }) {
           <BatchCard
             key={b.batchName}
             batch={b}
-            currentTask={currentTaskMap[b.batchName]}
+            currentTask={SHOW_CURRENT_TASK ? currentTaskMap[b.batchName] : undefined}
             onClick={openBatchModal}
           />
         ))}
@@ -273,20 +278,23 @@ export function BatchTable({ batches, isLoading, isError }) {
                 </TableSortLabel>
               </TableCell>
             ))}
-            <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110, fontSize: { md: '0.8rem', xl: '0.875rem' } }}>
-              Current Task
-            </TableCell>
+            {/* Current Task column header — hidden when SHOW_CURRENT_TASK is false */}
+            {SHOW_CURRENT_TASK && (
+              <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110, fontSize: { md: '0.8rem', xl: '0.875rem' } }}>
+                Current Task
+              </TableCell>
+            )}
           </TableRow>
         </TableHead>
         <TableBody>
           {isLoading ? (
-            <SkeletonRows extraCol />
+            <SkeletonRows />
           ) : (
             sortedData.map((batch) => (
               <BatchRow
                 key={batch.batchName}
                 batch={batch}
-                currentTask={currentTaskMap[batch.batchName]}
+                currentTask={SHOW_CURRENT_TASK ? currentTaskMap[batch.batchName] : undefined}
                 ctLoading={ctLoading}
                 onClick={openBatchModal}
               />
