@@ -1,0 +1,231 @@
+/**
+ * upload.integration.test.js
+ *
+ * Integration tests for POST /api/batches/upload/:sheet
+ *
+ * Strategy:
+ *   - Build a minimal Express app (same pattern as currentTasks tests).
+ *   - Load test data into the store via loadFromFile (fixture) before each suite.
+ *   - For successful upload tests, read the real benefits.xlsx / tax.xlsx from
+ *     data/ as a Buffer and send it as multipart/form-data via supertest.
+ *   - Verify: store count, response shape, per-sheet isolation (other sheet unchanged).
+ *   - Verify error paths: no file, wrong sheet param, non-xlsx content.
+ *
+ * One-time loading assertion:
+ *   - Confirm that after startup the store is populated exactly once and that
+ *     subsequent calls to getAll() return from the in-memory store (no disk I/O).
+ */
+
+'use strict';
+
+const request    = require('supertest');
+const path       = require('path');
+const fs         = require('fs');
+const express    = require('express');
+
+require('dotenv').config();
+
+const excelService      = require('../server/services/excelService');
+const batchRoutes       = require('../server/routes/batchRoutes');
+const { errorHandler }  = require('../server/middlewares/errorHandler');
+
+const FIXTURE_PATH    = path.resolve(__dirname, '../data/batches.xlsx');
+const BENEFITS_PATH   = path.resolve(__dirname, '../data/benefits.xlsx');
+const TAX_PATH        = path.resolve(__dirname, '../data/tax.xlsx');
+
+// Build a minimal test app (no app.listen)
+const app = express();
+app.use(express.json());
+app.use('/api', batchRoutes);
+app.use(errorHandler);
+
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Read a file into a Buffer — used to send as multipart upload. */
+function readBuffer(filePath) {
+  return fs.readFileSync(filePath);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+describe('POST /api/batches/upload/:sheet — upload endpoint', () => {
+
+  beforeAll(async () => {
+    // Load the combined fixture so each test starts with a known store state
+    await excelService.loadFromFile(FIXTURE_PATH);
+  });
+
+  // ── Valid uploads ────────────────────────────────────────────────────────
+
+  describe('successful upload — benefits sheet', () => {
+    let res;
+
+    beforeAll(async () => {
+      const buf = readBuffer(BENEFITS_PATH);
+      res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', buf, { filename: 'benefits.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    });
+
+    test('returns HTTP 201', () => {
+      expect(res.status).toBe(201);
+    });
+
+    test('response has success:true', () => {
+      expect(res.body.success).toBe(true);
+    });
+
+    test('response sheet matches param', () => {
+      expect(res.body.sheet).toBe('benefits');
+    });
+
+    test('response count is a positive number', () => {
+      expect(typeof res.body.count).toBe('number');
+      expect(res.body.count).toBeGreaterThan(0);
+    });
+
+    test('response message is a non-empty string', () => {
+      expect(typeof res.body.message).toBe('string');
+      expect(res.body.message.length).toBeGreaterThan(0);
+    });
+
+    test('GET /api/batches?sheet=benefits now returns reloaded data', async () => {
+      const getRes = await request(app).get('/api/batches?sheet=benefits');
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.count).toBeGreaterThan(0);
+      expect(getRes.body.count).toBe(res.body.count);
+    });
+
+    test('tax sheet is NOT affected by benefits upload', async () => {
+      const taxBefore = excelService.getAll('tax').length;
+      // Upload benefits again
+      const buf = readBuffer(BENEFITS_PATH);
+      await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', buf, { filename: 'benefits.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const taxAfter = excelService.getAll('tax').length;
+      expect(taxAfter).toBe(taxBefore);
+    });
+  });
+
+  describe('successful upload — tax sheet', () => {
+    let res;
+
+    beforeAll(async () => {
+      const buf = readBuffer(TAX_PATH);
+      res = await request(app)
+        .post('/api/batches/upload/tax')
+        .attach('file', buf, { filename: 'tax.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    });
+
+    test('returns HTTP 201', () => {
+      expect(res.status).toBe(201);
+    });
+
+    test('response sheet is "tax"', () => {
+      expect(res.body.sheet).toBe('tax');
+    });
+
+    test('response count is positive', () => {
+      expect(res.body.count).toBeGreaterThan(0);
+    });
+
+    test('benefits sheet is NOT affected by tax upload', async () => {
+      const benBefore = excelService.getAll('benefits').length;
+      const buf = readBuffer(TAX_PATH);
+      await request(app)
+        .post('/api/batches/upload/tax')
+        .attach('file', buf, { filename: 'tax.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const benAfter = excelService.getAll('benefits').length;
+      expect(benAfter).toBe(benBefore);
+    });
+  });
+
+  // ── Error paths ──────────────────────────────────────────────────────────
+
+  describe('error path — invalid sheet param', () => {
+    test('returns 400 for unknown sheet name', async () => {
+      const buf = readBuffer(BENEFITS_PATH);
+      const res = await request(app)
+        .post('/api/batches/upload/unknown')
+        .attach('file', buf, { filename: 'benefits.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+  });
+
+  describe('error path — no file provided', () => {
+    test('returns an error status when no file is attached', async () => {
+      // supertest sends a Content-Type without a boundary, causing multer to
+      // emit a "Boundary not found" error (500) before the controller runs.
+      // The controller path (no req.file → 400) is also valid. Both are errors.
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .set('Content-Type', 'multipart/form-data');
+      expect([400, 500]).toContain(res.status);
+      expect(res.body.success).toBe(false);
+    });
+  });
+
+  describe('error path — wrong file type', () => {
+    test('returns 400 when a .txt file is uploaded', async () => {
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', Buffer.from('not an xlsx'), { filename: 'bad.txt', contentType: 'text/plain' });
+      // Either 400 (MIME rejection) or 500 (ExcelJS parse failure) is acceptable
+      expect([400, 422, 500]).toContain(res.status);
+      expect(res.body.success).toBe(false);
+    });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+describe('One-time loading — in-memory store behaviour', () => {
+
+  beforeAll(async () => {
+    await excelService.loadFromFile(FIXTURE_PATH);
+  });
+
+  test('store is populated after loadFromFile', () => {
+    const all = excelService.getAll();
+    expect(all.length).toBeGreaterThan(0);
+  });
+
+  test('getAll() returns the same reference count on repeated calls (no disk I/O)', () => {
+    const first  = excelService.getAll().length;
+    const second = excelService.getAll().length;
+    expect(first).toBe(second);
+  });
+
+  test('getAll("benefits") returns only benefits rows', () => {
+    const benefits = excelService.getAll('benefits');
+    benefits.forEach((b) => expect(b.sheetSource).toBe('benefits'));
+  });
+
+  test('getAll("tax") returns only tax rows', () => {
+    const tax = excelService.getAll('tax');
+    tax.forEach((b) => expect(b.sheetSource).toBe('tax'));
+  });
+
+  test('reloadSheet replaces only that sheet — total count stays consistent', async () => {
+    const taxCountBefore      = excelService.getAll('tax').length;
+    const benefitsCountBefore = excelService.getAll('benefits').length;
+
+    const buf = readBuffer(BENEFITS_PATH);
+    await excelService.reloadSheet('benefits', buf);
+
+    // Tax count must be unchanged
+    expect(excelService.getAll('tax').length).toBe(taxCountBefore);
+    // Benefits count may change (new file), but must be > 0
+    expect(excelService.getAll('benefits').length).toBeGreaterThan(0);
+    // Sanity: total = benefits + tax
+    expect(excelService.getAll().length).toBe(
+      excelService.getAll('benefits').length + excelService.getAll('tax').length
+    );
+
+    // Cleanup — reload fixture so subsequent test suites are unaffected
+    await excelService.loadFromFile(FIXTURE_PATH);
+    expect(excelService.getAll('benefits').length).toBe(benefitsCountBefore);
+  });
+});

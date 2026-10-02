@@ -9,12 +9,13 @@
  * replaced by the StatusReportTab component.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import {
   Box, Container, Typography, Button, Stack,
+  CircularProgress, Alert, Snackbar,
 } from '@mui/material';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import RefreshIcon      from '@mui/icons-material/Refresh';
+import UploadFileIcon   from '@mui/icons-material/UploadFile';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { SheetTabs }        from '../components/SheetTabs/SheetTabs';
@@ -25,17 +26,21 @@ import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab'
 
 import { useBatchContext }  from '../context/BatchContext';
 import { useAllBatches }    from '../hooks/useBatches';
-import { exportToExcel }    from '../utils/helpers';
+import { uploadSheet }      from '../services/apiService';
 
 export default function Dashboard() {
-  const queryClient = useQueryClient();
+  const queryClient  = useQueryClient();
+  const fileInputRef = useRef(null);
+
   const { searchQuery, activeSheet } = useBatchContext();
+
+  // ── Upload state ──────────────────────────────────────────────────────────
+  const [uploading,    setUploading]    = useState(false);
+  const [snackbar,     setSnackbar]     = useState({ open: false, message: '', severity: 'success' });
 
   const isStatusReportTab = activeSheet === 'status-report';
 
   // Only fetch batch data when on the Benefits or Tax tab.
-  // Passing 'status-report' to useAllBatches would hit the API with an unknown
-  // sheet value — guard it with null so the query is disabled.
   const { data: allBatches, isLoading, isError, dataUpdatedAt } = useAllBatches(
     isStatusReportTab ? null : activeSheet
   );
@@ -57,11 +62,51 @@ export default function Dashboard() {
     );
   }, [allBatches, searchQuery, isStatusReportTab]);
 
-  const handleExport = () => exportToExcel(filteredBatches, `${activeSheet}_batches_export`);
-
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString()
     : null;
+
+  // ── Upload handlers ───────────────────────────────────────────────────────
+
+  /** Open the hidden file input when the Upload button is clicked. */
+  const handleUploadClick = useCallback(() => {
+    if (fileInputRef.current) {
+      // Reset value so selecting the same file again re-triggers onChange
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  }, []);
+
+  /** Called when the user picks a file. */
+  const handleFileChange = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const result = await uploadSheet(activeSheet, file);
+      // Invalidate TanStack Query cache so the table refreshes from new server data
+      await queryClient.invalidateQueries({ queryKey: ['batches'] });
+      setSnackbar({
+        open:     true,
+        message:  result.message || `Uploaded successfully — ${result.count} batch(es) loaded.`,
+        severity: 'success',
+      });
+    } catch (err) {
+      setSnackbar({
+        open:     true,
+        message:  err.message || 'Upload failed. Please check the file and try again.',
+        severity: 'error',
+      });
+    } finally {
+      setUploading(false);
+    }
+  }, [activeSheet, queryClient]);
+
+  const handleSnackbarClose = useCallback((_, reason) => {
+    if (reason === 'clickaway') return;
+    setSnackbar((prev) => ({ ...prev, open: false }));
+  }, []);
 
   return (
     /*
@@ -93,9 +138,10 @@ export default function Dashboard() {
             </Typography>
           )}
         </Box>
-        {/* Export buttons — only shown on batch tabs */}
+
+        {/* Action buttons — only shown on Benefits / Tax tabs */}
         {!isStatusReportTab && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
             <Button
               size="small"
               startIcon={<RefreshIcon />}
@@ -103,14 +149,24 @@ export default function Dashboard() {
             >
               Refresh
             </Button>
+
+            {/* Hidden file input — triggered programmatically */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={handleFileChange}
+            />
+
             <Button
               size="small"
               variant="outlined"
-              startIcon={<FileDownloadIcon />}
-              onClick={handleExport}
-              disabled={!filteredBatches.length}
+              startIcon={uploading ? <CircularProgress size={14} color="inherit" /> : <UploadFileIcon />}
+              onClick={handleUploadClick}
+              disabled={uploading}
             >
-              Export CSV ({filteredBatches.length})
+              {uploading ? 'Uploading…' : `Upload ${activeSheet === 'benefits' ? 'Benefits' : 'Tax'} Sheet`}
             </Button>
           </Stack>
         )}
@@ -120,7 +176,7 @@ export default function Dashboard() {
       <SheetTabs />
 
       {isStatusReportTab ? (
-        /* ── Status Report tab — full-width table, no search/filter ── */
+        /* ── Status Report tab — full-width table, no search ── */
         <StatusReportTab enabled />
       ) : (
         /* ── Benefits / Tax tabs — search bar + batch table ── */
@@ -139,6 +195,23 @@ export default function Dashboard() {
 
       {/* Batch detail modal (globally mounted — reads from context) */}
       <BatchDetailModal />
+
+      {/* Upload feedback snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={5000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }

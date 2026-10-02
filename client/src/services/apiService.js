@@ -89,7 +89,6 @@ export async function fetchCurrentTasks(sheet) {
   const res = await client.get(API_PATHS.currentTasks(sheet));
   return res.data;  // return full envelope { success, sheet, count, serverTime, data }
 }
-
 /**
  * Fetches the status report data from DB2 (via server-side cache).
  * Pass force=true to bypass the server cache and force a fresh DB2 query.
@@ -105,6 +104,23 @@ export async function fetchStatusReport(force = false) {
     timeout: DB_TIMEOUT_MS,
   });
   // Return the full envelope — consumer needs cacheHit + cachedAt
+  return res.data;
+}
+
+/**
+ * Uploads a new .xlsx/.xls file for the given sheet and hot-reloads the
+ * in-memory batch store on the server.
+ *
+ * @param {'benefits'|'tax'} sheet
+ * @param {File} file - the File object from the browser's file input
+ * @returns {Promise<{ success: boolean, sheet: string, count: number, message: string }>}
+ */
+export async function uploadSheet(sheet, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await client.post(API_PATHS.uploadSheet(sheet), formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return res.data;
 }
 
