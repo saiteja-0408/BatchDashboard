@@ -170,7 +170,7 @@ export function StatusReportTab({ enabled }) {
 
       {/* ── Search input — matches SearchBar.jsx style exactly ── */}
       {showTable && (
-        <Box mb={1.5}>
+        <Box mb={1}>
           <TextField
             fullWidth
             size="small"
@@ -251,8 +251,9 @@ export function StatusReportTab({ enabled }) {
           sx={{
             width:     '100%',
             overflowX: 'auto',
+            // No minHeight — container shrinks to fit actual row count so
+            // a filtered 1-row result does not leave a large empty block below it.
             maxHeight: { xs: 'calc(100vh - 340px)', xl: 'calc(100vh - 300px)' },
-            minHeight: 200,
           }}
         >
           <Table
@@ -304,16 +305,23 @@ export function StatusReportTab({ enabled }) {
                       key={col.id}
                       sx={{
                         // Fluid row font — improves data density on large screens
-                        fontSize:  { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
-                        py:        { xs: 0.75, xl: 1 },
-                        whiteSpace: col.id === 'job_name' || col.id === 'job_group' || col.id === 'parent_job_name'
+                        fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
+                        py:         { xs: 0.75, xl: 1 },
+                        // job_name / parent_job_name may be long PascalCase — allow wrap
+                        // job_group uses underscore tokens — keep on one line, clip with ellipsis
+                        whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
                           ? 'normal'
                           : 'nowrap',
-                        wordBreak: 'break-word',
-                        // job_name allowed to grow more on large screens
+                        wordBreak:    col.id === 'job_name' || col.id === 'parent_job_name'
+                          ? 'break-word'
+                          : 'normal',
+                        overflow:     'hidden',
+                        textOverflow: 'ellipsis',
                         maxWidth: col.id === 'job_name'
                           ? { xs: 180, md: 220, xl: 320 }
-                          : 'none',
+                          : col.id === 'job_group' || col.id === 'parent_job_group'
+                            ? { xs: 140, md: 180, xl: 240 }
+                            : 'none',
                       }}
                     >
                       {col.id === '_status'
