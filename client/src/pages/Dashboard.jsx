@@ -18,7 +18,6 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import RefreshIcon      from '@mui/icons-material/Refresh';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { SummaryCards }     from '../components/SummaryCards/SummaryCards';
 import { SheetTabs }        from '../components/SheetTabs/SheetTabs';
 import { SearchBar }        from '../components/SearchBar/SearchBar';
 import { FilterPanel }      from '../components/FilterPanel/FilterPanel';
@@ -102,7 +101,7 @@ export default function Dashboard() {
         mb={{ xs: 2, lg: 3 }}
       >
         <Box>
-          <Typography variant="h5" fontWeight={700}>Batch Job Monitor</Typography>
+          <Typography variant="h5" fontWeight={700}>Batch Monitoring</Typography>
           {lastUpdated && !isStatusReportTab && (
             <Typography variant="caption" color="text.secondary">
               Last refreshed: {lastUpdated}
@@ -132,10 +131,7 @@ export default function Dashboard() {
         )}
       </Stack>
 
-      {/* Summary statistics */}
-      <SummaryCards />
-
-      {/* Sheet selector tabs — Benefits | Tax | Status Report */}
+      {/* Sheet selector tabs — Status Report | Benefits | Tax */}
       {/* Divider removed: SheetTabs already renders a borderBottom, and the cards
           above provide sufficient visual separation through spacing alone. */}
       <SheetTabs />
