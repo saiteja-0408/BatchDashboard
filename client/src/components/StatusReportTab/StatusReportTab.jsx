@@ -13,14 +13,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
-  Box, Typography, Alert, Chip, CircularProgress, IconButton, Tooltip,
+  Box, Typography, Alert, Chip, CircularProgress, Button,
   Table, TableHead, TableBody, TableRow, TableCell,
   TableContainer, Paper, Skeleton, Stack,
-  TextField, InputAdornment,
+  TextField, InputAdornment, IconButton,
 } from '@mui/material';
-import RefreshIcon    from '@mui/icons-material/Refresh';
-import SearchIcon     from '@mui/icons-material/Search';
-import ClearIcon      from '@mui/icons-material/Clear';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import SearchIcon  from '@mui/icons-material/Search';
+import ClearIcon   from '@mui/icons-material/Clear';
 import { useStatusReport } from '../../hooks/useStatusReport';
 
 /** Debounce delay — matches SearchBar.jsx */
@@ -124,7 +124,7 @@ export function StatusReportTab({ enabled }) {
     isIdle,
     isError,
     error,
-    refetch,
+    refresh,
   } = useStatusReport(enabled);
 
   // ── Local search state (same pattern as SearchBar.jsx) ────────────────────
@@ -172,11 +172,10 @@ export function StatusReportTab({ enabled }) {
   return (
     <Box sx={{ width: '100%', minWidth: 0 }}>
 
-      {/* ── Toolbar: cache info + refresh buttons ── */}
+      {/* ── Toolbar: cache info + single Refresh button ── */}
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-          {isFetching && <CircularProgress size={14} thickness={5} />}
-          {cachedAt && !isFetching && (
+          {cachedAt && (
             <Typography variant="caption" color="text.secondary" noWrap>
               Last updated: {new Date(cachedAt).toLocaleTimeString()}
               {cacheHit === true  && ' (cached)'}
@@ -184,22 +183,25 @@ export function StatusReportTab({ enabled }) {
             </Typography>
           )}
         </Box>
-        <Stack direction="row" spacing={0.5} alignItems="center" flexShrink={0}>
-          <Tooltip title="Force refresh — bypasses server cache">
-            <span>
-              <IconButton size="small" onClick={() => refetch(true)} disabled={isFetching} aria-label="Force refresh">
-                <RefreshIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Soft refresh (may return cached data)">
-            <span>
-              <IconButton size="small" onClick={() => refetch(false)} disabled={isFetching} aria-label="Refresh" sx={{ color: 'text.secondary' }}>
-                <RefreshIcon fontSize="small" sx={{ opacity: 0.5 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Stack>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={refresh}
+          disabled={isFetching}
+          startIcon={
+            isFetching
+              ? <CircularProgress size={14} color="inherit" />
+              : <RefreshIcon fontSize="small"
+                  sx={{
+                    transition: 'transform 0.4s ease',
+                    '@keyframes spin': { from: { transform: 'rotate(0deg)' }, to: { transform: 'rotate(360deg)' } },
+                  }}
+                />
+          }
+          sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+        >
+          Refresh
+        </Button>
       </Stack>
 
       {/* ── Search input — matches SearchBar.jsx style exactly ── */}
