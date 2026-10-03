@@ -1,41 +1,41 @@
 /**
- * CommandViewer.jsx — displays the run and resume qclient commands for a batch.
+ * CommandViewer.jsx — 4-section copy-paste panel for a selected batch.
  *
- * Commands are constructed from batch fields using buildCommand():
- *   <logDir>
- *   sudo ./qclient.sh <action> <batchName> <scheduleName> ["<arguments>"]
+ * Sections:
+ *   1. Change Directory  — domain-specific cd command from batch.logDir
+ *   2. Run Command       — sudo ./qclient.sh runJobOnly …
+ *   3. Resume Command    — sudo ./qclient.sh resumeJob …
+ *   4. Log Paths         — domain-filtered paths with batch name substituted
  *
- * The arguments portion is omitted when the arguments field is empty.
- * The schedule name is sourced directly from the batch row — never guessed.
+ * Each section renders as a labelled CommandBlock with a one-click copy button.
+ * No static placeholder text — batch name is always substituted at render time.
  */
 
 import React from 'react';
 import PropTypes from 'prop-types';
 import {
-  Box, Typography, Tooltip, IconButton, Stack, Chip, Alert,
+  Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
 } from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckIcon       from '@mui/icons-material/Check';
+import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
+import CheckIcon        from '@mui/icons-material/Check';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { buildCommand, VALID_SCHEDULE_NAMES } from '../../utils/constants';
+import { buildQclientLine, LOG_PATH_DEFS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
-const COMMAND_DEFS = [
-  { label: 'Run',    action: 'runJobOnly' },
-  { label: 'Resume', action: 'resumeJob'  },
-];
+// ── CommandBlock ──────────────────────────────────────────────────────────────
 
 /**
- * Single command block: label chip, monospace code, copy button.
- * Memoised — avoids remounting when the same batch is re-opened.
+ * Single labelled copy-paste block.
+ * label      — section heading text (e.g. "Change Directory")
+ * sublabel   — optional smaller descriptor shown next to the label
+ * value      — the text to display and copy
  */
-const CommandBlock = React.memo(function CommandBlock({ label, value }) {
+const CommandBlock = React.memo(function CommandBlock({ label, sublabel, value }) {
   const { copy, copied } = useCopyToClipboard();
 
   return (
     <Box
       sx={{
-        mb: 2,
         borderRadius: 1,
         border: '1px solid',
         borderColor: 'divider',
@@ -45,16 +45,26 @@ const CommandBlock = React.memo(function CommandBlock({ label, value }) {
       {/* Header bar */}
       <Box
         sx={{
-          px: 1.5, py: 0.5,
+          px: 1.5, py: 0.75,
           bgcolor: 'action.hover',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: 1,
         }}
       >
-        <Chip label={label} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
-        <Tooltip title={copied ? 'Copied!' : 'Copy command'}>
-          <IconButton size="small" onClick={() => copy(value)}>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0 }}>
+          <Typography variant="body2" fontWeight={700} noWrap>
+            {label}
+          </Typography>
+          {sublabel && (
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {sublabel}
+            </Typography>
+          )}
+        </Box>
+        <Tooltip title={copied ? 'Copied!' : 'Copy'}>
+          <IconButton size="small" onClick={() => copy(value)} sx={{ flexShrink: 0 }}>
             {copied
               ? <CheckIcon fontSize="small" color="success" />
               : <ContentCopyIcon fontSize="small" />}
@@ -62,19 +72,19 @@ const CommandBlock = React.memo(function CommandBlock({ label, value }) {
         </Tooltip>
       </Box>
 
-      {/* Command body */}
+      {/* Value body */}
       <Box
         component="pre"
         sx={{
           m: 0,
-          px: 1.5, py: 1.5,
+          px: 1.5, py: 1.25,
           fontSize: 'clamp(0.72rem, 1.5vw, 0.82rem)',
           fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
           bgcolor: 'background.default',
           color: 'text.primary',
-          lineHeight: 1.8,
+          lineHeight: 1.7,
         }}
       >
         {value}
@@ -82,59 +92,109 @@ const CommandBlock = React.memo(function CommandBlock({ label, value }) {
     </Box>
   );
 });
-
 CommandBlock.propTypes = {
-  label: PropTypes.string.isRequired,
-  value: PropTypes.string.isRequired,
+  label:    PropTypes.string.isRequired,
+  sublabel: PropTypes.string,
+  value:    PropTypes.string.isRequired,
 };
 
+// ── Section wrapper ───────────────────────────────────────────────────────────
+
+function Section({ number, title, children }) {
+  return (
+    <Box>
+      <Typography
+        variant="caption"
+        fontWeight={700}
+        color="text.secondary"
+        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', mb: 0.75 }}
+      >
+        Option {number} — {title}
+      </Typography>
+      <Stack spacing={1}>
+        {children}
+      </Stack>
+    </Box>
+  );
+}
+Section.propTypes = {
+  number:   PropTypes.number.isRequired,
+  title:    PropTypes.string.isRequired,
+  children: PropTypes.node.isRequired,
+};
+
+// ── CommandViewer ─────────────────────────────────────────────────────────────
+
 /**
- * Renders the run and resume commands for a given batch.
- * Shows a warning banner if the schedule name is not in the approved list.
- *
  * @param {{ batch: Object }} props
  */
 export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   if (!batch) return null;
 
   const scheduleIsValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
+  const domain = batch.sheetSource; // 'benefits' | 'tax'
+  const logDefs = LOG_PATH_DEFS[domain] ?? [];
 
   return (
-    <Stack spacing={0}>
-      {/* Schedule name warning banner */}
+    <Stack spacing={0} divider={<Divider sx={{ my: 2 }} />}>
+
+      {/* ── Warnings ── */}
+      {!batch.scheduleName && (
+        <Alert severity="error" sx={{ fontSize: '0.82rem' }}>
+          No schedule name found for this batch — commands cannot be constructed.
+        </Alert>
+      )}
       {!scheduleIsValid && batch.scheduleName && (
         <Alert
           severity="warning"
           icon={<WarningAmberIcon fontSize="inherit" />}
-          sx={{ mb: 2, fontSize: '0.82rem' }}
+          sx={{ fontSize: '0.82rem' }}
         >
-          Schedule name <strong>"{batch.scheduleName}"</strong> is not in the approved
-          list. The command below is shown as-is from the Excel data — verify before
-          running.
+          Schedule <strong>"{batch.scheduleName}"</strong> is not in the approved list.
+          Verify before running.
         </Alert>
       )}
 
-      {!batch.scheduleName && (
-        <Alert severity="error" sx={{ mb: 2, fontSize: '0.82rem' }}>
-          No schedule name found for this batch. Command cannot be constructed.
-        </Alert>
-      )}
-
-      {/* Run and Resume command blocks */}
-      {COMMAND_DEFS.map(({ label, action }) => (
+      {/* ── Option 1: Change Directory ── */}
+      <Section number={1} title="Change Directory">
         <CommandBlock
-          key={action}
-          label={label}
-          value={buildCommand(batch, action)}
+          label="cd"
+          value={batch.logDir}
         />
-      ))}
+      </Section>
 
-      {/* Arguments info row */}
-      {batch.arguments && (
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-          Arguments: <code>{batch.arguments}</code>
-        </Typography>
-      )}
+      {/* ── Option 2: Run Command ── */}
+      <Section number={2} title="Run Command">
+        <CommandBlock
+          label="Run"
+          value={buildQclientLine(batch, 'runJobOnly')}
+        />
+      </Section>
+
+      {/* ── Option 3: Resume Command ── */}
+      <Section number={3} title="Resume Command">
+        <CommandBlock
+          label="Resume"
+          value={buildQclientLine(batch, 'resumeJob')}
+        />
+      </Section>
+
+      {/* ── Option 4: Log Paths ── */}
+      <Section number={4} title="Log Paths">
+        {logDefs.map(({ label, path }) => (
+          <CommandBlock
+            key={label}
+            label={label}
+            value={path(batch.batchName)}
+          />
+        ))}
+        {logDefs.length === 0 && (
+          <Typography variant="caption" color="text.secondary">
+            No log paths defined for domain "{domain}".
+          </Typography>
+        )}
+      </Section>
+
     </Stack>
   );
 });
@@ -145,6 +205,7 @@ CommandViewer.propTypes = {
     scheduleName:  PropTypes.string,
     arguments:     PropTypes.string,
     logDir:        PropTypes.string,
+    sheetSource:   PropTypes.string,
     scheduleValid: PropTypes.bool,
   }),
 };

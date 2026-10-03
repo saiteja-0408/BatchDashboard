@@ -1,96 +1,62 @@
 /**
- * BatchDetailModal.jsx — full detail modal for a selected batch.
+ * BatchDetailModal.jsx — copy-paste command panel for a selected batch.
  *
- * Shows batch metadata + Run/Resume commands.
- * Displays a schedule name warning badge when the schedule is not in the approved list.
+ * Shows 4 sections: Change Directory, Run Command, Resume Command, Log Paths.
+ * All batch detail fields (Batch Name, Schedule, Arguments, Sheet, Log Dir)
+ * have been removed — the title and sheet chip provide sufficient context.
  *
  * Performance:
  *   - Subscribes to BatchModalContext (useBatchModal) NOT BatchDataContext so it
  *     is the ONLY component that re-renders when a row is clicked.
  *   - Dialog is always mounted — open prop flips between true/false instead of
- *     the entire subtree unmounting/remounting on every open. This eliminates
- *     the cold-mount cost (~35 DOM nodes) that previously occurred on every click.
+ *     the entire subtree unmounting/remounting on every open.
  *   - transitionDuration reduced to 120ms enter / 80ms exit for snappier feel.
- *   - InfoRow is memoised — stable batch object means it never re-renders needlessly.
  *   - handleClose is stable (useCallback).
  */
 
 import React, { useCallback, useMemo } from 'react';
-import PropTypes from 'prop-types';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Box, Typography, Chip, Divider,
-  Grid, IconButton, Tooltip, Alert,
+  IconButton, Tooltip, Alert,
 } from '@mui/material';
 import CloseIcon        from '@mui/icons-material/Close';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { CommandViewer }   from '../CommandViewer/CommandViewer';
-import { COLUMN_LABELS, SHEET_LABELS } from '../../utils/constants';
+import { CommandViewer } from '../CommandViewer/CommandViewer';
+import { SHEET_LABELS }  from '../../utils/constants';
 import { useBatchModal } from '../../context/BatchContext';
 
-/** Memoised — only re-renders when label or value changes */
-const InfoRow = React.memo(function InfoRow({ label, value }) {
-  if (!value && value !== 0) return null;
-  return (
-    <>
-      <Grid item xs={5} sm={4}>
-        <Typography variant="body2" color="text.secondary" fontWeight={600}>
-          {label}
-        </Typography>
-      </Grid>
-      <Grid item xs={7} sm={8}>
-        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
-          {value}
-        </Typography>
-      </Grid>
-    </>
-  );
-});
-InfoRow.propTypes = {
-  label: PropTypes.string,
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-};
-
 export const BatchDetailModal = React.memo(function BatchDetailModal() {
-  // Uses the modal-specific context slice — does NOT subscribe to BatchDataContext
-  // so BatchDetailModal is the only component that re-renders on row click.
   const { selectedBatch: batch, isModalOpen, closeBatchModal } = useBatchModal();
 
-  const handleClose = useCallback(() => {
-    closeBatchModal();
-  }, [closeBatchModal]);
+  const handleClose = useCallback(() => closeBatchModal(), [closeBatchModal]);
 
-  // Derive sheetLabel once per batch change, not on every render.
-  // Falls back to the previous batch value while the close animation plays
-  // (batch is only cleared 300ms after close, so the label stays visible).
+  // Derive sheetLabel once per batch change.
+  // Falls back to the previous value while the close animation plays
+  // (batch is only cleared 300ms after close so the label stays visible).
   const sheetLabel = useMemo(
     () => (batch ? (SHEET_LABELS[batch.sheetSource] || batch.sheetSource || '—') : ''),
     [batch]
   );
 
-  // Dialog is always mounted — open/closed is controlled by isModalOpen only.
-  // This means the first open is still a cold mount, but every subsequent open
-  // is just a prop flip (open: false → true) with no DOM create/destroy work.
   return (
     <Dialog
       open={isModalOpen}
       onClose={handleClose}
-      maxWidth="lg"
+      maxWidth="md"
       fullWidth
       scroll="paper"
-      fullScreen={false}
-      // Reduced from MUI default 225ms enter / 195ms exit — cuts perceived lag
-      // by ~100ms on every open while still feeling intentional.
       transitionDuration={{ enter: 120, exit: 80 }}
       sx={{
         '& .MuiDialog-paper': {
           m: { xs: 1, sm: 2 },
           maxHeight: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 32px)' },
           width: { xs: 'calc(100% - 16px)', sm: undefined },
-          maxWidth: { xl: '900px', xl2: '1040px' },
+          maxWidth: { xl: '780px', xl2: '900px' },
         },
       }}
     >
+      {/* Title row: batch name + sheet chip + close button */}
       <DialogTitle
         sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', pb: 1 }}
       >
@@ -98,7 +64,6 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
           <Typography variant="h6" component="span" sx={{ wordBreak: 'break-word' }}>
             {batch?.batchName}
           </Typography>
-          {/* Schedule warning badge in title area */}
           {batch && !batch.scheduleValid && batch.scheduleName && (
             <Tooltip title={`Schedule "${batch.scheduleName}" is not in the approved list`}>
               <Chip
@@ -127,7 +92,6 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
       <Divider />
 
       <DialogContent>
-        {/* Guard: batch may briefly be null during close animation */}
         {batch && (
           <>
             {/* Schedule validity warning */}
@@ -138,24 +102,7 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
               </Alert>
             )}
 
-            {/* Batch metadata */}
-            <Typography variant="subtitle2" fontWeight={700} color="text.secondary" gutterBottom>
-              Details
-            </Typography>
-            <Grid container spacing={1} sx={{ mb: 3 }}>
-              <InfoRow label={COLUMN_LABELS.batchName}    value={batch.batchName} />
-              <InfoRow label={COLUMN_LABELS.scheduleName} value={batch.scheduleName} />
-              <InfoRow label={COLUMN_LABELS.arguments}    value={batch.arguments || '(none)'} />
-              <InfoRow label={COLUMN_LABELS.sheetSource}  value={sheetLabel} />
-              <InfoRow label={COLUMN_LABELS.logDir}       value={batch.logDir} />
-            </Grid>
-
-            <Divider sx={{ mb: 2 }} />
-
-            {/* Run / Resume commands */}
-            <Typography variant="subtitle2" fontWeight={700} color="text.secondary" gutterBottom>
-              Run / Resume Commands
-            </Typography>
+            {/* 4-section command panel */}
             <CommandViewer batch={batch} />
           </>
         )}

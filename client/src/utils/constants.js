@@ -210,3 +210,48 @@ export function buildCommand(batch, action) {
   }
   return `${batch.logDir}\n${parts.join(' ')}`;
 }
+
+/**
+ * Builds only the qclient.sh invocation line (without the cd prefix).
+ * Used when the cd command is displayed separately as Option 1.
+ *
+ * @param {Object} batch
+ * @param {'runJobOnly'|'resumeJob'} action
+ * @returns {string}
+ */
+export function buildQclientLine(batch, action) {
+  const parts = ['sudo', './qclient.sh', action, batch.batchName, batch.scheduleName];
+  if (batch.arguments && batch.arguments.trim()) {
+    parts.push(`"${batch.arguments.trim()}"`);
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Log path definitions per domain.
+ * <batchName> is substituted at render time.
+ *
+ * Structure: { benefits: [{ label, path }], tax: [{ label, path }] }
+ */
+export const LOG_PATH_DEFS = {
+  benefits: [
+    {
+      label: 'Benefits logs',
+      path:  (batchName) => `/opt/app/accessms/bin/benefits/batch/logs/${batchName}`,
+    },
+    {
+      label: 'Benefits logs archive',
+      path:  (batchName) => `/opt/logs/Batch/archive/benefits/logs/${batchName}`,
+    },
+  ],
+  tax: [
+    {
+      label: 'Tax logs',
+      path:  (batchName) => `/opt/app/accessms/bin/tax/batch/logs/${batchName}`,
+    },
+    {
+      label: 'Tax logs archive',
+      path:  (batchName) => `/opt/logs/Batch/archive/tax/logs/${batchName}`,
+    },
+  ],
+};
