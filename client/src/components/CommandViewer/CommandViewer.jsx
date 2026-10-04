@@ -14,7 +14,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import {
-  Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
+  Tooltip, IconButton, Stack, Alert, Divider, Box, Typography,
 } from '@mui/material';
 import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
 import CheckIcon        from '@mui/icons-material/Check';
@@ -100,26 +100,14 @@ CommandBlock.propTypes = {
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
-function Section({ number, title, children }) {
+function Section({ children }) {
   return (
-    <Box>
-      <Typography
-        variant="caption"
-        fontWeight={700}
-        color="text.secondary"
-        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', mb: 0.75 }}
-      >
-        Option {number} — {title}
-      </Typography>
-      <Stack spacing={1}>
-        {children}
-      </Stack>
-    </Box>
+    <Stack spacing={1}>
+      {children}
+    </Stack>
   );
 }
 Section.propTypes = {
-  number:   PropTypes.number.isRequired,
-  title:    PropTypes.string.isRequired,
   children: PropTypes.node.isRequired,
 };
 
@@ -155,32 +143,32 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
         </Alert>
       )}
 
-      {/* ── Option 1: Change Directory ── */}
-      <Section number={1} title="Change Directory">
+      {/* ── Change Directory ── */}
+      <Section>
         <CommandBlock
           label="cd"
           value={batch.logDir}
         />
       </Section>
 
-      {/* ── Option 2: Run Command ── */}
-      <Section number={2} title="Run Command">
+      {/* ── Run Command ── */}
+      <Section>
         <CommandBlock
           label="Run"
           value={buildQclientLine(batch, 'runJobOnly')}
         />
       </Section>
 
-      {/* ── Option 3: Resume Command ── */}
-      <Section number={3} title="Resume Command">
+      {/* ── Resume Command ── */}
+      <Section>
         <CommandBlock
           label="Resume"
           value={buildQclientLine(batch, 'resumeJob')}
         />
       </Section>
 
-      {/* ── Option 4: Log Paths ── */}
-      <Section number={4} title="Log Paths">
+      {/* ── Log Paths ── */}
+      <Section>
         {logDefs.map(({ label, path }) => (
           <CommandBlock
             key={label}
