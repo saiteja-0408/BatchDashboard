@@ -59,25 +59,7 @@ function getTargetFilePath(sheetSource) {
  * Ensures swapping benefits.xlsx or tax.xlsx immediately reflects in all read operations.
  * @param {'benefits'|'tax'} [sheetSource]
  */
-function syncFromDiskIfModified(sheetSource) {
-  const sourcesToCheck = sheetSource ? [sheetSource] : ['benefits', 'tax'];
-
-  for (const src of sourcesToCheck) {
-    const targetFile = getTargetFilePath(src);
-    try {
-      if (fs.existsSync(targetFile)) {
-        const stats = fs.statSync(targetFile);
-        const currentMtime = stats.mtimeMs;
-        if (currentMtime > (_fileMtimes[src] || 0)) {
-          // File on disk changed or replaced — reload asynchronously/synchronously into store
-          const { rows } = require('../utils/fileParser').parseExcelFile(targetFile, src);
-        }
-      }
-    } catch {
-      // Ignore stat or read errors to avoid disrupting in-memory store
-    }
-  }
-}
+// Helper for syncing modified files is handled asynchronously in syncFromDisk
 
 /**
  * Internal helper: parses one file, validates rows, and returns a BatchModel[].

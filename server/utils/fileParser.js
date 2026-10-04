@@ -46,17 +46,19 @@ const NORMALISED_COLUMN_MAP = Object.fromEntries(
  * @returns {'benefits'|'tax'|null}
  */
 function detectSheetSource(sheetName, defaultSheetSource = null) {
+  if (defaultSheetSource) return defaultSheetSource;
   const lower = (sheetName || '').toLowerCase().trim();
   if (lower.includes('benefit')) return 'benefits';
   if (lower.includes('tax'))     return 'tax';
-  if (lower === 'data' || lower.includes('data')) {
-    return defaultSheetSource || null;
-  }
   return null;
 }
 
 /**
- * Internal: walks all sheets in a loaded ExcelJS Workbook and returns rows.
+ * Internal: walks sheets in a loaded ExcelJS Workbook and returns rows.
+ * When defaultSheetSource is specified (e.g. Benefits or Tax file/upload), always reads
+ * the first sheet (index 0) of the workbook regardless of its name.
+ * If defaultSheetSource is not provided, processes all sheets and identifies Benefits/Tax by name.
+ *
  * Shared by both parseExcelFile and parseExcelBuffer.
  *
  * @param {ExcelJS.Workbook} workbook
@@ -67,27 +69,19 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
   const warnings = [];
   const allRows  = [];
 
-  // If a specific sheet named "Data" (case-insensitive) exists and defaultSheetSource is provided,
-  // target that sheet specifically (or all matching sheets).
-  const sheetsToProcess = [];
-  const dataSheet = workbook.worksheets.find(
-    (s) => s.name.trim().toLowerCase() === 'data'
-  );
-
-  if (dataSheet && defaultSheetSource) {
-    sheetsToProcess.push(dataSheet);
-  } else {
-    sheetsToProcess.push(...workbook.worksheets);
+  if (!workbook.worksheets || workbook.worksheets.length === 0) {
+    return { rows: [], warnings: ['Workbook contains no sheets.'] };
   }
 
-  sheetsToProcess.forEach((sheet) => {
-    const sheetName   = sheet.name;
-    let sheetSource   = detectSheetSource(sheetName, defaultSheetSource);
+  // When targeting a specific sheet source (Benefits or Tax file read / upload),
+  // always process the FIRST sheet (index 0) regardless of the sheet's name.
+  const sheetsToProcess = defaultSheetSource
+    ? [workbook.worksheets[0]]
+    : workbook.worksheets;
 
-    // If sheet source is still undetermined, use defaultSheetSource as fallback
-    if (!sheetSource && defaultSheetSource) {
-      sheetSource = defaultSheetSource;
-    }
+  sheetsToProcess.forEach((sheet) => {
+    const sheetName = sheet.name;
+    const sheetSource = defaultSheetSource || detectSheetSource(sheetName, null);
 
     if (!sheetSource) {
       warnings.push(`Sheet "${sheetName}" is not a recognised Benefits or Tax sheet — skipped.`);

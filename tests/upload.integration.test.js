@@ -179,25 +179,45 @@ describe('POST /api/batches/upload/:sheet — upload endpoint', () => {
     });
   });
 
-  describe('successful parsing of sheet named "Data"', () => {
-    test('parses workbook where the sheet tab is named "Data"', async () => {
+  describe('successful parsing of arbitrary first sheet name (first sheet index logic)', () => {
+    test('parses workbook where the first sheet has an arbitrary name e.g. "MyCustomSheet"', async () => {
       const ExcelJS = require('exceljs');
       const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet('Data');
+      const ws = wb.addWorksheet('MyCustomSheet');
       ws.addRow(['Batch Name/Job Name', 'Schedule Name/ Job Group Name', 'Batch Arguments/JVM Arguments']);
-      ws.addRow(['TestDataBatch', 'benefits_daily_6am', '-Xmx512m']);
+      ws.addRow(['TestCustomSheetBatch', 'benefits_daily_6am', '-Xmx512m']);
       const buf = await wb.xlsx.writeBuffer();
 
       const res = await request(app)
         .post('/api/batches/upload/benefits')
-        .attach('file', Buffer.from(buf), { filename: 'benefits_data.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        .attach('file', Buffer.from(buf), { filename: 'benefits_custom.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
       expect(res.status).toBe(201);
       expect(res.body.sheet).toBe('benefits');
       expect(res.body.count).toBe(1);
 
       const getRes = await request(app).get('/api/batches?sheet=benefits');
-      expect(getRes.body.data.some((b) => b.batchName === 'TestDataBatch')).toBe(true);
+      expect(getRes.body.data.some((b) => b.batchName === 'TestCustomSheetBatch')).toBe(true);
+    });
+
+    test('parses workbook where the first sheet is named "Sheet1" for tax upload', async () => {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      ws.addRow(['Batch Name/Job Name', 'Schedule Name/ Job Group Name', 'Batch Arguments/JVM Arguments']);
+      ws.addRow(['TestTaxSheet1Batch', 'benefits_weekly_monday_515pm', '-Xmx1024m']);
+      const buf = await wb.xlsx.writeBuffer();
+
+      const res = await request(app)
+        .post('/api/batches/upload/tax')
+        .attach('file', Buffer.from(buf), { filename: 'tax_sheet1.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.sheet).toBe('tax');
+      expect(res.body.count).toBe(1);
+
+      const getRes = await request(app).get('/api/batches?sheet=tax');
+      expect(getRes.body.data.some((b) => b.batchName === 'TestTaxSheet1Batch')).toBe(true);
     });
   });
 
