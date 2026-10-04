@@ -30,6 +30,10 @@ function normaliseHeader(s) {
   return String(s || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function cleanHeaderKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 /**
  * Build a lookup map: normalised Excel header → internal field name.
  * Computed once at module load time.
@@ -37,6 +41,44 @@ function normaliseHeader(s) {
 const NORMALISED_COLUMN_MAP = Object.fromEntries(
   Object.entries(COLUMN_MAP).map(([header, field]) => [normaliseHeader(header), field])
 );
+
+/**
+ * Fallback fuzzy header mapper if exact normalized match fails.
+ * Matches common patterns (e.g. "batch", "job", "arg", "sched", "group", "trigger").
+ * @param {string} rawHeader
+ * @returns {string|null}
+ */
+function matchHeaderField(rawHeader) {
+  if (!rawHeader) return null;
+  const norm = normaliseHeader(rawHeader);
+  if (NORMALISED_COLUMN_MAP[norm]) return NORMALISED_COLUMN_MAP[norm];
+
+  const key = cleanHeaderKey(rawHeader);
+  if (!key) return null;
+
+  // Direct match on alphanumeric-only keys
+  for (const [header, field] of Object.entries(COLUMN_MAP)) {
+    if (cleanHeaderKey(header) === key) {
+      return field;
+    }
+  }
+
+  // Heuristic substring match
+  if (key.includes('batchname') || key.includes('jobname') || key.startsWith('batch') || key.startsWith('job')) {
+    return 'batchName';
+  }
+  if (key.includes('argument') || key.includes('jvm') || key.includes('args')) {
+    return 'arguments';
+  }
+  if (key.includes('schedule') || key.includes('jobgroup') || key.includes('sched')) {
+    return 'scheduleName';
+  }
+  if (key.includes('trigger')) {
+    return 'triggerNeeded';
+  }
+
+  return null;
+}
 
 /**
  * Determine the sheetSource tag from the sheet name.
@@ -98,15 +140,32 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
     // headerIndex: column number → internal field name (null if not mapped)
     const headerIndex = {};
     headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
-      const raw        = cell.value;
-      const normHeader = normaliseHeader(
-        raw && typeof raw === 'object' && raw.richText
-          ? raw.richText.map((r) => r.text).join('')
-          : String(raw || '')
-      );
-      const fieldName = NORMALISED_COLUMN_MAP[normHeader] || null;
+      const raw = cell.value;
+      const rawText = raw && typeof raw === 'object' && raw.richText
+        ? raw.richText.map((r) => r.text).join('')
+        : String(raw || '');
+      const fieldName = matchHeaderField(rawText);
       headerIndex[colNum] = fieldName;
     });
+
+    // Fallback if header row didn't map batchName by name (e.g. headerless or unexpected custom titles):
+    // If no batchName column found among mapped columns, default Column 1 -> batchName, Column 2 -> arguments/schedule, etc.
+    const mappedFields = Object.values(headerIndex).filter(Boolean);
+    if (!mappedFields.includes('batchName')) {
+      const colNums = Object.keys(headerIndex).map(Number).sort((a, b) => a - b);
+      if (colNums.length > 0) {
+        headerIndex[colNums[0]] = 'batchName';
+      }
+      if (colNums.length > 1 && !mappedFields.includes('scheduleName')) {
+        headerIndex[colNums[1]] = colNums.length === 2 ? 'scheduleName' : 'arguments';
+      }
+      if (colNums.length > 2 && !mappedFields.includes('scheduleName')) {
+        headerIndex[colNums[2]] = 'scheduleName';
+      }
+      if (colNums.length > 3 && !mappedFields.includes('triggerNeeded')) {
+        headerIndex[colNums[3]] = 'triggerNeeded';
+      }
+    }
 
     const logDir = SHEET_LOG_PATHS[sheetSource] || '';
 
@@ -183,11 +242,19 @@ function parseCsvBuffer(buffer, defaultSheetSource = 'benefits') {
   const headerCells = parseLine(lines[0]);
   const colIndexToField = {};
   headerCells.forEach((header, idx) => {
-    const norm = normaliseHeader(header.replace(/^["']|["']$/g, ''));
-    if (NORMALISED_COLUMN_MAP[norm]) {
-      colIndexToField[idx] = NORMALISED_COLUMN_MAP[norm];
+    const raw = header.replace(/^["']|["']$/g, '');
+    const field = matchHeaderField(raw);
+    if (field) {
+      colIndexToField[idx] = field;
     }
   });
+
+  if (!Object.values(colIndexToField).includes('batchName') && headerCells.length > 0) {
+    colIndexToField[0] = 'batchName';
+    if (headerCells.length > 1) colIndexToField[1] = headerCells.length === 2 ? 'scheduleName' : 'arguments';
+    if (headerCells.length > 2) colIndexToField[2] = 'scheduleName';
+    if (headerCells.length > 3) colIndexToField[3] = 'triggerNeeded';
+  }
 
   const sheetSource = defaultSheetSource || 'benefits';
   const logDir = SHEET_LOG_PATHS[sheetSource] || '';

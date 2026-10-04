@@ -257,6 +257,48 @@ describe('POST /api/batches/upload/:sheet — upload endpoint', () => {
       expect(res.body.success).toBe(false);
     });
   });
+
+  describe('flexible header and empty sheet error paths', () => {
+    test('returns 422 when an excel file with no batch rows is uploaded', async () => {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Empty');
+      ws.addRow(['Batch Name/Job Name', 'Schedule Name/ Job Group Name', 'Batch Arguments/JVM Arguments']);
+      // no data rows
+      const buf = await wb.xlsx.writeBuffer();
+
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', Buffer.from(buf), { filename: 'empty.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.success).toBe(false);
+    });
+
+    test('parses workbook with unconventional column headers e.g. "Job", "Args", "Schedule", "Trigger"', async () => {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      ws.addRow(['Job', 'Args', 'Schedule', 'Trigger']);
+      ws.addRow(['CustomHeaderBatch', '-Denv=test', 'benefits_daily_6am', 'Y']);
+      const buf = await wb.xlsx.writeBuffer();
+
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', Buffer.from(buf), { filename: 'custom_headers.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.sheet).toBe('benefits');
+      expect(res.body.count).toBe(1);
+
+      const getRes = await request(app).get('/api/batches?sheet=benefits');
+      const found = getRes.body.data.find((b) => b.batchName === 'CustomHeaderBatch');
+      expect(found).toBeDefined();
+      expect(found.arguments).toBe('-Denv=test');
+      expect(found.scheduleName).toBe('benefits_daily_6am');
+      expect(found.triggerNeeded).toBe('Y');
+    });
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

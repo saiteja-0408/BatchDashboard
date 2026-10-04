@@ -281,17 +281,17 @@ function getSummary() {
 async function reloadSheet(sheetSource, buffer) {
   const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, sheetSource);
 
-  // Filter or assign rows that belong to the target sheet
+  // Ensure all incoming batches belong to the requested sheetSource and have the right logDir
   const incoming = batches.map((b) => ({
     ...b,
-    sheetSource, // Ensure correct target sheet tagging
+    sheetSource,
     logDir: b.logDir || (sheetSource === 'tax' ? 'cd /opt/app/accessms/bin/tax/batch/' : 'cd /opt/app/accessms/bin/benefits/batch'),
   }));
 
   if (incoming.length === 0) {
     const err = new Error(
       `Uploaded file contains no valid batch rows for the "${sheetSource}" sheet. ` +
-      'Make sure the file contains at least a "Batch Name/Job Name" column and valid data rows.'
+      'Make sure the first sheet contains valid data rows with batch job entries.'
     );
     err.status = 422;
     throw err;
