@@ -179,6 +179,28 @@ describe('POST /api/batches/upload/:sheet — upload endpoint', () => {
     });
   });
 
+  describe('successful parsing of sheet named "Data"', () => {
+    test('parses workbook where the sheet tab is named "Data"', async () => {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Data');
+      ws.addRow(['Batch Name/Job Name', 'Schedule Name/ Job Group Name', 'Batch Arguments/JVM Arguments']);
+      ws.addRow(['TestDataBatch', 'benefits_daily_6am', '-Xmx512m']);
+      const buf = await wb.xlsx.writeBuffer();
+
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', Buffer.from(buf), { filename: 'benefits_data.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.sheet).toBe('benefits');
+      expect(res.body.count).toBe(1);
+
+      const getRes = await request(app).get('/api/batches?sheet=benefits');
+      expect(getRes.body.data.some((b) => b.batchName === 'TestDataBatch')).toBe(true);
+    });
+  });
+
   // ── Error paths ──────────────────────────────────────────────────────────
 
   describe('error path — invalid sheet param', () => {

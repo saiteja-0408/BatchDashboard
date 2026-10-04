@@ -28,10 +28,11 @@ let _store = [];
  * Does NOT mutate _store.
  *
  * @param {string} filePath
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
  * @returns {Promise<{ batches: import('../models/batchModel').BatchModel[], warnings: string[] }>}
  */
-async function _parseToBatches(filePath) {
-  const { rows, warnings } = await parseExcelFile(filePath);
+async function _parseToBatches(filePath, defaultSheetSource = null) {
+  const { rows, warnings } = await parseExcelFile(filePath, defaultSheetSource);
 
   if (warnings.length > 0) {
     warnings.forEach((w) => console.warn(`[excelService] WARNING: ${w}`));
@@ -60,11 +61,11 @@ async function loadFromFiles(benefitsPath, taxPath) {
   const allWarnings = [];
 
   const [benefitsResult, taxResult] = await Promise.all([
-    _parseToBatches(benefitsPath).catch((err) => {
+    _parseToBatches(benefitsPath, 'benefits').catch((err) => {
       allWarnings.push(`benefits.xlsx: ${err.message}`);
       return { batches: [], warnings: [] };
     }),
-    _parseToBatches(taxPath).catch((err) => {
+    _parseToBatches(taxPath, 'tax').catch((err) => {
       allWarnings.push(`tax.xlsx: ${err.message}`);
       return { batches: [], warnings: [] };
     }),

@@ -42,12 +42,16 @@ const NORMALISED_COLUMN_MAP = Object.fromEntries(
  * Determine the sheetSource tag from the sheet name.
  * Returns 'benefits', 'tax', or null (unrecognised → skip).
  * @param {string} sheetName
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
  * @returns {'benefits'|'tax'|null}
  */
-function detectSheetSource(sheetName) {
-  const lower = sheetName.toLowerCase();
+function detectSheetSource(sheetName, defaultSheetSource = null) {
+  const lower = (sheetName || '').toLowerCase().trim();
   if (lower.includes('benefit')) return 'benefits';
   if (lower.includes('tax'))     return 'tax';
+  if (lower === 'data' || lower.includes('data')) {
+    return defaultSheetSource || null;
+  }
   return null;
 }
 
@@ -63,15 +67,25 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
   const warnings = [];
   const allRows  = [];
 
-  // Determine if workbook has only 1 sheet
-  const sheetCount = workbook.worksheets.length;
+  // If a specific sheet named "Data" (case-insensitive) exists and defaultSheetSource is provided,
+  // target that sheet specifically (or all matching sheets).
+  const sheetsToProcess = [];
+  const dataSheet = workbook.worksheets.find(
+    (s) => s.name.trim().toLowerCase() === 'data'
+  );
 
-  workbook.eachSheet((sheet) => {
+  if (dataSheet && defaultSheetSource) {
+    sheetsToProcess.push(dataSheet);
+  } else {
+    sheetsToProcess.push(...workbook.worksheets);
+  }
+
+  sheetsToProcess.forEach((sheet) => {
     const sheetName   = sheet.name;
-    let sheetSource   = detectSheetSource(sheetName);
+    let sheetSource   = detectSheetSource(sheetName, defaultSheetSource);
 
-    // If single sheet upload and sheet name doesn't explicitly match, use defaultSheetSource
-    if (!sheetSource && sheetCount === 1 && defaultSheetSource) {
+    // If sheet source is still undetermined, use defaultSheetSource as fallback
+    if (!sheetSource && defaultSheetSource) {
       sheetSource = defaultSheetSource;
     }
 
@@ -212,12 +226,21 @@ function parseCsvBuffer(buffer, defaultSheetSource = 'benefits') {
  * Each row carries three mapped fields plus sheetSource and logDir.
  *
  * @param {string} filePath - Absolute path to the .xlsx file
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
  * @returns {Promise<{ rows: Object[], warnings: string[] }>}
  */
-async function parseExcelFile(filePath) {
+async function parseExcelFile(filePath, defaultSheetSource = null) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
-  return _extractRowsFromWorkbook(workbook);
+
+  // If defaultSheetSource was not explicitly passed, infer it from the file name
+  if (!defaultSheetSource && typeof filePath === 'string') {
+    const lowerPath = filePath.toLowerCase();
+    if (lowerPath.includes('benefit')) defaultSheetSource = 'benefits';
+    else if (lowerPath.includes('tax')) defaultSheetSource = 'tax';
+  }
+
+  return _extractRowsFromWorkbook(workbook, defaultSheetSource);
 }
 
 /**
