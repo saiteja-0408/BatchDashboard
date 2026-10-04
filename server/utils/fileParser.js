@@ -56,15 +56,24 @@ function detectSheetSource(sheetName) {
  * Shared by both parseExcelFile and parseExcelBuffer.
  *
  * @param {ExcelJS.Workbook} workbook
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
  * @returns {{ rows: Object[], warnings: string[] }}
  */
-function _extractRowsFromWorkbook(workbook) {
+function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
   const warnings = [];
   const allRows  = [];
 
+  // Determine if workbook has only 1 sheet
+  const sheetCount = workbook.worksheets.length;
+
   workbook.eachSheet((sheet) => {
     const sheetName   = sheet.name;
-    const sheetSource = detectSheetSource(sheetName);
+    let sheetSource   = detectSheetSource(sheetName);
+
+    // If single sheet upload and sheet name doesn't explicitly match, use defaultSheetSource
+    if (!sheetSource && sheetCount === 1 && defaultSheetSource) {
+      sheetSource = defaultSheetSource;
+    }
 
     if (!sheetSource) {
       warnings.push(`Sheet "${sheetName}" is not a recognised Benefits or Tax sheet — skipped.`);
@@ -91,16 +100,6 @@ function _extractRowsFromWorkbook(workbook) {
       headerIndex[colNum] = fieldName;
     });
 
-    // Warn about any expected column that is entirely absent from this sheet
-    const presentFields = new Set(Object.values(headerIndex).filter(Boolean));
-    for (const fieldName of Object.values(COLUMN_MAP)) {
-      if (!presentFields.has(fieldName)) {
-        // Find the expected Excel header name for a readable warning
-        const excelHeader = Object.keys(COLUMN_MAP).find((k) => COLUMN_MAP[k] === fieldName);
-        warnings.push(`Sheet "${sheetName}": expected column "${excelHeader}" not found.`);
-      }
-    }
-
     const logDir = SHEET_LOG_PATHS[sheetSource] || '';
 
     // ── Parse data rows (row 2 onwards) ──────────────────────────────────
@@ -126,10 +125,10 @@ function _extractRowsFromWorkbook(workbook) {
         if (mapped[fieldName]) hasValue = true;
       });
 
-      // Fill any absent mapped fields with empty string
-      for (const fieldName of Object.values(COLUMN_MAP)) {
+      // Fill default absent fields
+      ['batchName', 'arguments', 'scheduleName', 'triggerNeeded'].forEach((fieldName) => {
         if (!(fieldName in mapped)) mapped[fieldName] = '';
-      }
+      });
 
       // Only store rows that have at least a batchName value
       if (hasValue && mapped.batchName) allRows.push(mapped);
@@ -137,6 +136,75 @@ function _extractRowsFromWorkbook(workbook) {
   });
 
   return { rows: allRows, warnings };
+}
+
+/**
+ * Parses a simple CSV buffer into row objects using line and comma split.
+ * Handles quoted cells with embedded commas and whitespace.
+ * @param {Buffer} buffer
+ * @param {'benefits'|'tax'} [defaultSheetSource='benefits']
+ * @returns {{ rows: Object[], warnings: string[] }}
+ */
+function parseCsvBuffer(buffer, defaultSheetSource = 'benefits') {
+  const text = buffer.toString('utf-8');
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) {
+    return { rows: [], warnings: ['CSV file is empty or missing data rows.'] };
+  }
+
+  // Parse CSV line respecting quotes
+  const parseLine = (line) => {
+    const result = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' || char === "'") {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(cur.trim());
+        cur = '';
+      } else {
+        cur += char;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  };
+
+  const headerCells = parseLine(lines[0]);
+  const colIndexToField = {};
+  headerCells.forEach((header, idx) => {
+    const norm = normaliseHeader(header.replace(/^["']|["']$/g, ''));
+    if (NORMALISED_COLUMN_MAP[norm]) {
+      colIndexToField[idx] = NORMALISED_COLUMN_MAP[norm];
+    }
+  });
+
+  const sheetSource = defaultSheetSource || 'benefits';
+  const logDir = SHEET_LOG_PATHS[sheetSource] || '';
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseLine(lines[i]);
+    const mapped = { sheetSource, logDir, batchName: '', arguments: '', scheduleName: '', triggerNeeded: '' };
+    let hasValue = false;
+
+    cells.forEach((val, colIdx) => {
+      const field = colIndexToField[colIdx];
+      if (field) {
+        const clean = val.replace(/^["']|["']$/g, '').trim();
+        mapped[field] = clean;
+        if (clean) hasValue = true;
+      }
+    });
+
+    if (hasValue && mapped.batchName) {
+      rows.push(mapped);
+    }
+  }
+
+  return { rows, warnings: [] };
 }
 
 /**
@@ -153,16 +221,31 @@ async function parseExcelFile(filePath) {
 }
 
 /**
- * Reads an Excel file from an in-memory Buffer and returns an array of raw
+ * Reads an Excel or CSV file from an in-memory Buffer and returns an array of raw
  * row objects. Used by the upload endpoint so no temp file is needed.
  *
- * @param {Buffer} buffer - raw .xlsx/.xls file bytes
+ * @param {Buffer} buffer - raw .xlsx/.xls/.csv file bytes
+ * @param {'benefits'|'tax'} [defaultSheetSource=null]
  * @returns {Promise<{ rows: Object[], warnings: string[] }>}
  */
-async function parseExcelBuffer(buffer) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  return _extractRowsFromWorkbook(workbook);
+async function parseExcelBuffer(buffer, defaultSheetSource = null) {
+  // Check if buffer is CSV by checking first bytes / attempting exceljs load
+  try {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    return _extractRowsFromWorkbook(workbook, defaultSheetSource);
+  } catch (xlsxErr) {
+    // If ExcelJS failed, attempt CSV parsing
+    try {
+      const csvResult = parseCsvBuffer(buffer, defaultSheetSource);
+      if (csvResult.rows.length > 0) {
+        return csvResult;
+      }
+    } catch {
+      // Fall through to throw original error
+    }
+    throw xlsxErr;
+  }
 }
 
 module.exports = { parseExcelFile, parseExcelBuffer };

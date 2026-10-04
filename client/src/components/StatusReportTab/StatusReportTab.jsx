@@ -27,17 +27,6 @@ import { getRowStatus, sortStatusRows } from '../../utils/helpers';
 const DEBOUNCE_MS = 350;
 
 /**
- * Column IDs that are searched.
- * Excludes timestamp columns (start_time, end_time, next_fire_time) because
- * formatted timestamps are locale-specific and not useful to search.
- */
-const SEARCHABLE_IDS = new Set([
-  'job_name', 'job_group',
-  'biz_error_flag', 'error_flag', 'killed_flag',
-  'parent_job_name', 'parent_job_group',
-]);
-
-/**
  * Column definitions.
  * minWidth keeps the table usable on 1280px.
  * flex (0–1) is a relative weight hint used below to assign proportional widths
@@ -46,9 +35,9 @@ const SEARCHABLE_IDS = new Set([
 const COLUMNS = [
   { id: 'job_name',         label: 'Job Name',     minWidth: 160, flex: 2   },
   { id: 'job_group',        label: 'Job Group',    minWidth: 140, flex: 1.5 },
-  { id: 'start_time',       label: 'Start Time',   minWidth: 90,  flex: 1   },
-  { id: 'end_time',         label: 'End Time',     minWidth: 90,  flex: 1   },
-  { id: 'next_fire_time',   label: 'Next Fire',    minWidth: 90,  flex: 1   },
+  { id: 'start_time',       label: 'Start Time',   minWidth: 140, flex: 1.2 },
+  { id: 'end_time',         label: 'End Time',     minWidth: 140, flex: 1.2 },
+  { id: 'next_fire_time',   label: 'Next Fire',    minWidth: 140, flex: 1.2 },
   { id: 'biz_error_flag',   label: 'Biz Err',      minWidth: 50,  flex: 0.5 },
   { id: 'error_flag',       label: 'Err',          minWidth: 40,  flex: 0.5 },
   { id: 'killed_flag',      label: 'Killed',       minWidth: 50,  flex: 0.5 },
@@ -94,38 +83,77 @@ function SkeletonRows({ rows = 5 }) {
 }
 
 /**
+ * Helper to parse any timestamp / date representation (ISO-8601, DB2 string, Unix timestamp, Date).
+ * DB2 formats: "2026-10-03 21:30:00.846000" or "2026-10-03-21.30.00.846000"
+ * ISO formats: "2026-10-03T21:30:00.846Z"
+ * Unix timestamps: number or numeric string
+ * @param {*} v
+ * @returns {Date|null}
+ */
+export function parseDateValue(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v === 'number') {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return null;
+    // Check if numeric timestamp
+    if (/^\d{10,13}$/.test(s)) {
+      const num = Number(s);
+      const d = new Date(s.length === 10 ? num * 1000 : num);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    // Normalize DB2 timestamp format "YYYY-MM-DD-HH.mm.ss.ffffff" -> "YYYY-MM-DDTHH:mm:ss"
+    const db2Normalized = s.replace(/^(\d{4}-\d{2}-\d{2})[- ](\d{2})[.:](\d{2})[.:](\d{2})(?:\.(\d+))?/, '$1T$2:$3:$4.$5');
+    const d1 = new Date(db2Normalized);
+    if (!isNaN(d1.getTime())) return d1;
+
+    // Standard Date parse fallback
+    const d2 = new Date(s);
+    if (!isNaN(d2.getTime())) return d2;
+  }
+  return null;
+}
+
+/**
+ * Standardize timestamp display to "YYYY-MM-DD HH:mm:ss" (24h) with 2-digit zero-padding.
+ * Also provides formatted string for date/time columns.
+ * @param {Date} d
+ * @returns {string}
+ */
+export function formatStandardDateTime(d) {
+  if (!d || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  const year  = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day   = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const mins  = pad(d.getMinutes());
+  const secs  = pad(d.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${mins}:${secs}`;
+}
+
+/**
  * Formats a cell value for display.
- * start_time → time only (HH:MM:SS AM/PM).
- * All other timestamp columns → locale short date+time.
+ * start_time, end_time, next_fire_time → Standardized Date & Time "YYYY-MM-DD HH:mm:ss".
  * Null/empty → em dash.
  *
  * @param {*}      value  Raw cell value
  * @param {string} colId  Column id (e.g. 'start_time')
  */
-function formatCell(value, colId) {
+export function formatCell(value, colId) {
   if (value === null || value === undefined || value === '') return '—';
 
-  const toDate = (v) => {
-    if (v instanceof Date) return v;
-    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
-      const d = new Date(v);
-      return isNaN(d.getTime()) ? null : d;
+  if (colId === 'start_time' || colId === 'end_time' || colId === 'next_fire_time') {
+    const d = parseDateValue(value);
+    if (d) {
+      return formatStandardDateTime(d);
     }
-    return null;
-  };
-
-  const d = toDate(value);
-  if (d) {
-    if (colId === 'start_time') {
-      return d.toLocaleTimeString(undefined, {
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      });
-    }
-    return d.toLocaleString(undefined, {
-      month: '2-digit', day: '2-digit',
-      hour:  '2-digit', minute: '2-digit', second: '2-digit',
-    });
   }
+
   return String(value);
 }
 
@@ -169,19 +197,53 @@ export function StatusReportTab({ enabled }) {
 
   const allRows = envelope?.data ?? [];
 
-  // ── Client-side filter & sort ─────────────────────────────────────────────
+  // ── Client-side filter & sort (Global multi-column search) ─────────────────
   const filteredRows = useMemo(() => {
     let list = allRows;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = allRows.filter((row) =>
-        COLUMNS.some((col) => {
-          if (!SEARCHABLE_IDS.has(col.id)) return false;
-          const val = row[col.id];
-          if (val === null || val === undefined) return false;
-          return String(val).toLowerCase().includes(q);
-        })
-      );
+    const rawQuery = searchQuery.trim();
+    if (rawQuery) {
+      const q = rawQuery.toLowerCase();
+      list = allRows.filter((row) => {
+        if (!row || typeof row !== 'object') return false;
+
+        // 1. Check all direct properties/columns on the row
+        for (const [key, val] of Object.entries(row)) {
+          if (val === null || val === undefined) continue;
+
+          // Check raw value string
+          const rawStr = String(val).toLowerCase();
+          if (rawStr.includes(q)) return true;
+
+          // If date/timestamp property, also test standardized formatted display
+          if (key.includes('time') || key.includes('date') || val instanceof Date) {
+            const d = parseDateValue(val);
+            if (d) {
+              const formatted = formatStandardDateTime(d).toLowerCase();
+              if (formatted.includes(q)) return true;
+              const localeStr = d.toLocaleString().toLowerCase();
+              if (localeStr.includes(q)) return true;
+            }
+          }
+        }
+
+        // 2. Check derived Status badge string ("Biz Error", "OK", etc.)
+        const statusStr = getRowStatus(row);
+        if (statusStr && statusStr.toLowerCase().includes(q)) {
+          return true;
+        }
+
+        // 3. Check for specific Biz Error semantic synonyms
+        if (
+          q === 'biz error' ||
+          q === 'biz' ||
+          q === 'business error' ||
+          q === 'error'
+        ) {
+          if (statusStr === 'Biz Error') return true;
+        }
+
+        return false;
+      });
     }
     return sortStatusRows(list, statusSortOrder);
   }, [allRows, searchQuery, statusSortOrder]);

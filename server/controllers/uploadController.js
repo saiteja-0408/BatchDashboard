@@ -23,6 +23,9 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
   'application/vnd.ms-excel',                                          // .xls
   'application/octet-stream',                                          // some browsers send this
+  'text/csv',                                                          // .csv
+  'application/csv',                                                   // .csv
+  'text/plain',                                                        // some OS/browsers report csv as text/plain
 ]);
 
 /**
@@ -49,10 +52,10 @@ async function uploadSheet(req, res) {
   // Loose MIME check — primarily rely on extension + ExcelJS parse failure
   const mime = (req.file.mimetype || '').toLowerCase();
   const name = (req.file.originalname || '').toLowerCase();
-  const validExt = name.endsWith('.xlsx') || name.endsWith('.xls');
+  const validExt = name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv');
   if (!ALLOWED_MIME_TYPES.has(mime) && !validExt) {
     const err = new Error(
-      `Invalid file type "${req.file.mimetype}". Only .xlsx and .xls files are accepted.`
+      `Invalid file type "${req.file.mimetype}". Only .xlsx, .xls, and .csv files are accepted.`
     );
     err.status = 400;
     throw err;

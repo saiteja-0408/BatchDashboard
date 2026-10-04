@@ -192,14 +192,19 @@ function getSummary() {
  * @returns {Promise<{ count: number, warnings: string[] }>}
  */
 async function reloadSheet(sheetSource, buffer) {
-  const { batches, warnings } = await _parseToBatchesFromBuffer(buffer);
+  const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, sheetSource);
 
-  // Only keep rows that belong to the target sheet
-  const incoming = batches.filter((b) => b.sheetSource === sheetSource);
-  if (incoming.length === 0 && warnings.length === 0) {
+  // Filter or assign rows that belong to the target sheet
+  const incoming = batches.map((b) => ({
+    ...b,
+    sheetSource, // Ensure correct target sheet tagging
+    logDir: b.logDir || (sheetSource === 'tax' ? 'cd /opt/app/accessms/bin/tax/batch/' : 'cd /opt/app/accessms/bin/benefits/batch'),
+  }));
+
+  if (incoming.length === 0) {
     const err = new Error(
-      `Uploaded file contains no rows for the "${sheetSource}" sheet. ` +
-      'Make sure the sheet tab name contains "benefit" or "tax".'
+      `Uploaded file contains no valid batch rows for the "${sheetSource}" sheet. ` +
+      'Make sure the file contains at least a "Batch Name/Job Name" column and valid data rows.'
     );
     err.status = 422;
     throw err;
@@ -210,6 +215,17 @@ async function reloadSheet(sheetSource, buffer) {
     ..._store.filter((b) => b.sheetSource !== sheetSource),
     ...incoming,
   ];
+
+  // Optionally persist uploaded buffer to data/benefits.xlsx or data/tax.xlsx on disk
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const dataDir = path.resolve(process.env.DATA_DIR || './data');
+    const targetFile = path.join(dataDir, `${sheetSource}.xlsx`);
+    fs.writeFileSync(targetFile, buffer);
+  } catch (fsErr) {
+    console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
+  }
 
   const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
   const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
@@ -228,8 +244,8 @@ async function reloadSheet(sheetSource, buffer) {
  * @param {Buffer} buffer
  * @returns {Promise<{ batches: import('../models/batchModel').BatchModel[], warnings: string[] }>}
  */
-async function _parseToBatchesFromBuffer(buffer) {
-  const { rows, warnings } = await parseExcelBuffer(buffer);
+async function _parseToBatchesFromBuffer(buffer, defaultSheetSource) {
+  const { rows, warnings } = await parseExcelBuffer(buffer, defaultSheetSource);
 
   if (warnings.length > 0) {
     warnings.forEach((w) => console.warn(`[excelService] WARNING: ${w}`));

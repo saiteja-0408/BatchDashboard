@@ -21,10 +21,38 @@
 
 /** Column header → internal field name mapping (applies to both sheets) */
 const COLUMN_MAP = {
+  // Batch Name / Job Name variations
   'Batch Name/Job Name':           'batchName',
+  'Batch Name':                    'batchName',
+  'Job Name':                      'batchName',
+  'Batch Name / Job Name':         'batchName',
+  'batch_name':                    'batchName',
+  'job_name':                      'batchName',
+
+  // Arguments variations
   'Batch Arguments/JVM Arguments': 'arguments',
+  'Batch Arguments':               'arguments',
+  'JVM Arguments':                 'arguments',
+  'Arguments':                     'arguments',
+  'Batch Arguments / JVM Arguments': 'arguments',
+  'batch_arguments':               'arguments',
+  'jvm_arguments':                 'arguments',
+
+  // Schedule Name / Job Group Name variations
   'Schedule Name/ Job Group Name': 'scheduleName',
+  'Schedule Name':                 'scheduleName',
+  'Job Group Name':                'scheduleName',
+  'Job Group':                     'scheduleName',
+  'Schedule':                      'scheduleName',
+  'Schedule Name / Job Group Name': 'scheduleName',
+  'schedule_name':                 'scheduleName',
+  'job_group':                     'scheduleName',
+
+  // Trigger Needed variations
   'Trigger Needed':                'triggerNeeded',
+  'Trigger':                       'triggerNeeded',
+  'Trigger Needed?':               'triggerNeeded',
+  'trigger_needed':                'triggerNeeded',
 };
 
 /**

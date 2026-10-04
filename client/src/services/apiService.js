@@ -118,8 +118,10 @@ export async function fetchStatusReport(force = false) {
 export async function uploadSheet(sheet, file) {
   const formData = new FormData();
   formData.append('file', file);
+  // Do NOT hardcode Content-Type: multipart/form-data with a static header so
+  // Axios/browser can automatically generate the correct boundary string.
   const res = await client.post(API_PATHS.uploadSheet(sheet), formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },
   });
   return res.data;
 }

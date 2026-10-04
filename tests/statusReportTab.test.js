@@ -1,9 +1,10 @@
 /**
  * statusReportTab.test.js
  *
- * Unit tests for StatusReportTab helper functions and table sorting logic:
+ * Unit tests for StatusReportTab helper functions, global search, and table sorting logic:
  *   - Row status determination (Biz Error, OK, fallback)
  *   - Stable partitioning & sorting logic with Biz Error priority
+ *   - Global multi-column search & Start Time formatting
  *   - Tab initialization and storage persistence
  */
 
@@ -11,14 +12,118 @@
 
 function getRowStatus(row) {
   if (!row) return '—';
-  if (typeof row.status === 'string' && row.status.trim() === 'Biz Error') return 'Biz Error';
-  if (typeof row._status === 'string' && row._status.trim() === 'Biz Error') return 'Biz Error';
+  const explicitStatus = row.status ?? row._status;
+  if (typeof explicitStatus === 'string') {
+    const s = explicitStatus.trim().toLowerCase();
+    if (s === 'biz error' || s === 'biz_error' || s === 'business error' || s === 'business_error') {
+      return 'Biz Error';
+    }
+    if (s === 'ok' || s === 'success' || s === 'complete' || s === 'completed') {
+      return 'OK';
+    }
+    if (explicitStatus.trim()) {
+      return explicitStatus.trim();
+    }
+  }
+
+  const errorMsg = row.error_message || row.errorMessage || row.error || row.error_desc || row.errorDescription;
+  if (typeof errorMsg === 'string') {
+    const errLower = errorMsg.toLowerCase();
+    if (errLower.includes('biz error') || errLower.includes('business error') || errLower.includes('biz_error')) {
+      return 'Biz Error';
+    }
+  }
+
   const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
-  if (isFlagTrue(row.biz_error_flag) || isFlagTrue(row.biz_error) || isFlagTrue(row.bizError)) {
+  if (
+    isFlagTrue(row.biz_error_flag) ||
+    isFlagTrue(row.biz_error) ||
+    isFlagTrue(row.bizError) ||
+    isFlagTrue(row.business_error_flag)
+  ) {
     return 'Biz Error';
   }
-  if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n') return 'OK';
+
+  if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n' || row.biz_error === 'N' || row.biz_error === 'n') {
+    return 'OK';
+  }
+
   return row.status ?? row._status ?? row.biz_error_flag ?? '—';
+}
+
+function parseDateValue(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v === 'number') {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return null;
+    if (/^\d{10,13}$/.test(s)) {
+      const num = Number(s);
+      const d = new Date(s.length === 10 ? num * 1000 : num);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const db2Normalized = s.replace(/^(\d{4}-\d{2}-\d{2})[- ](\d{2})[.:](\d{2})[.:](\d{2})(?:\.(\d+))?/, '$1T$2:$3:$4.$5');
+    const d1 = new Date(db2Normalized);
+    if (!isNaN(d1.getTime())) return d1;
+    const d2 = new Date(s);
+    if (!isNaN(d2.getTime())) return d2;
+  }
+  return null;
+}
+
+function formatStandardDateTime(d) {
+  if (!d || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  const year  = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day   = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const mins  = pad(d.getMinutes());
+  const secs  = pad(d.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${mins}:${secs}`;
+}
+
+function filterStatusRows(allRows, searchQuery) {
+  const rawQuery = searchQuery ? searchQuery.trim() : '';
+  if (!rawQuery) return allRows;
+  const q = rawQuery.toLowerCase();
+  return allRows.filter((row) => {
+    if (!row || typeof row !== 'object') return false;
+    for (const [key, val] of Object.entries(row)) {
+      if (val === null || val === undefined) continue;
+      const rawStr = String(val).toLowerCase();
+      if (rawStr.includes(q)) return true;
+
+      if (key.includes('time') || key.includes('date') || val instanceof Date) {
+        const d = parseDateValue(val);
+        if (d) {
+          const formatted = formatStandardDateTime(d).toLowerCase();
+          if (formatted.includes(q)) return true;
+          const localeStr = d.toLocaleString().toLowerCase();
+          if (localeStr.includes(q)) return true;
+        }
+      }
+    }
+
+    const statusStr = getRowStatus(row);
+    if (statusStr && statusStr.toLowerCase().includes(q)) {
+      return true;
+    }
+
+    if (
+      q === 'biz error' ||
+      q === 'biz' ||
+      q === 'business error' ||
+      q === 'error'
+    ) {
+      if (statusStr === 'Biz Error') return true;
+    }
+    return false;
+  });
 }
 
 function sortStatusRows(rows, sortOrder) {
@@ -54,12 +159,99 @@ describe('StatusReportTab unit tests', () => {
       expect(getRowStatus({ biz_error_flag: 'Y' })).toBe('Biz Error');
     });
 
+    test('identifies case variants like "BIZ ERROR" and "Business Error"', () => {
+      expect(getRowStatus({ status: 'BIZ ERROR' })).toBe('Biz Error');
+      expect(getRowStatus({ status: 'Business Error' })).toBe('Biz Error');
+      expect(getRowStatus({ error_desc: 'Business Error in validation' })).toBe('Biz Error');
+    });
+
     test('identifies biz_error_flag="N" as OK', () => {
       expect(getRowStatus({ biz_error_flag: 'N' })).toBe('OK');
     });
 
     test('handles fallback when neither is present', () => {
       expect(getRowStatus({})).toBe('—');
+    });
+  });
+
+  describe('Global Multi-Column Search & Start Time formatting', () => {
+    const sampleRows = [
+      {
+        job_name: 'BatchExportMSInterstateESRequestForLA',
+        job_group: 'benefits_daily_930pm',
+        start_time: '2026-10-03 21:30:00.846000',
+        end_time: '2026-10-03 21:30:01.221000',
+        biz_error_flag: 'N',
+        error_flag: 'N',
+        killed_flag: 'N',
+        parent_job_name: null,
+      },
+      {
+        job_name: 'BatchPayrollTaxCalc',
+        job_group: 'benefits_daily_12pm',
+        start_time: '2026-10-03T12:00:00.000Z',
+        end_time: null,
+        biz_error_flag: 'Y',
+        error_flag: 'N',
+        killed_flag: 'N',
+        parent_job_name: null,
+      },
+      {
+        job_name: 'BatchWithholdingReconcile',
+        job_group: 'tax_weekly_monday',
+        start_time: '2026-10-03 17:15:00.000000',
+        end_time: '2026-10-03 17:52:00.000000',
+        biz_error_flag: 'N',
+        error_flag: 'Y',
+        killed_flag: 'N',
+        parent_job_name: 'BatchEnrollmentSync',
+      },
+    ];
+
+    test('Searching "Biz Error" returns rows where status / biz_error_flag indicates Biz Error', () => {
+      const results = filterStatusRows(sampleRows, 'Biz Error');
+      expect(results).toHaveLength(1);
+      expect(results[0].job_name).toBe('BatchPayrollTaxCalc');
+    });
+
+    test('Searching "biz error" case-insensitively returns Biz Error rows', () => {
+      const results = filterStatusRows(sampleRows, 'biz error');
+      expect(results).toHaveLength(1);
+      expect(results[0].job_name).toBe('BatchPayrollTaxCalc');
+    });
+
+    test('Searching partial Start Time timestamp filters records accurately', () => {
+      const results1 = filterStatusRows(sampleRows, '21:30:00');
+      expect(results1).toHaveLength(1);
+      expect(results1[0].job_name).toBe('BatchExportMSInterstateESRequestForLA');
+
+      const results2 = filterStatusRows(sampleRows, '2026-10-03');
+      expect(results2).toHaveLength(3);
+    });
+
+    test('Searching parent job name or job group finds matching records', () => {
+      const byParent = filterStatusRows(sampleRows, 'BatchEnrollmentSync');
+      expect(byParent).toHaveLength(1);
+      expect(byParent[0].job_name).toBe('BatchWithholdingReconcile');
+
+      const byGroup = filterStatusRows(sampleRows, '930pm');
+      expect(byGroup).toHaveLength(1);
+      expect(byGroup[0].job_name).toBe('BatchExportMSInterstateESRequestForLA');
+    });
+
+    test('Search handles null or undefined row properties without errors', () => {
+      const edgeRows = [
+        { job_name: null, start_time: undefined, biz_error_flag: null },
+        { job_name: 'ValidJob', start_time: null, biz_error_flag: 'N' },
+      ];
+      expect(() => filterStatusRows(edgeRows, 'ValidJob')).not.toThrow();
+      expect(filterStatusRows(edgeRows, 'ValidJob')).toHaveLength(1);
+    });
+
+    test('parseDateValue and formatStandardDateTime formats DB2 timestamp correctly', () => {
+      const d = parseDateValue('2026-10-03 21:30:00.846000');
+      expect(d).toBeInstanceOf(Date);
+      expect(formatStandardDateTime(d)).toMatch(/2026-10-03 21:30:00/);
     });
   });
 

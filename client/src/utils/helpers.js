@@ -69,15 +69,46 @@ export async function copyToClipboard(text) {
  */
 export function getRowStatus(row) {
   if (!row) return '—';
-  // Check explicit status string
-  if (typeof row.status === 'string' && row.status.trim() === 'Biz Error') return 'Biz Error';
-  if (typeof row._status === 'string' && row._status.trim() === 'Biz Error') return 'Biz Error';
-  // Check flag fields (string or boolean or number)
+
+  // Check explicit status strings (with case-insensitive / variation support)
+  const explicitStatus = row.status ?? row._status;
+  if (typeof explicitStatus === 'string') {
+    const s = explicitStatus.trim().toLowerCase();
+    if (s === 'biz error' || s === 'biz_error' || s === 'business error' || s === 'business_error') {
+      return 'Biz Error';
+    }
+    if (s === 'ok' || s === 'success' || s === 'complete' || s === 'completed') {
+      return 'OK';
+    }
+    if (explicitStatus.trim()) {
+      return explicitStatus.trim();
+    }
+  }
+
+  // Check error message / description fields indicating business error
+  const errorMsg = row.error_message || row.errorMessage || row.error || row.error_desc || row.errorDescription;
+  if (typeof errorMsg === 'string') {
+    const errLower = errorMsg.toLowerCase();
+    if (errLower.includes('biz error') || errLower.includes('business error') || errLower.includes('biz_error')) {
+      return 'Biz Error';
+    }
+  }
+
+  // Check flag fields (string, boolean, or number)
   const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
-  if (isFlagTrue(row.biz_error_flag) || isFlagTrue(row.biz_error) || isFlagTrue(row.bizError)) {
+  if (
+    isFlagTrue(row.biz_error_flag) ||
+    isFlagTrue(row.biz_error) ||
+    isFlagTrue(row.bizError) ||
+    isFlagTrue(row.business_error_flag)
+  ) {
     return 'Biz Error';
   }
-  if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n') return 'OK';
+
+  if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n' || row.biz_error === 'N' || row.biz_error === 'n') {
+    return 'OK';
+  }
+
   return row.status ?? row._status ?? row.biz_error_flag ?? '—';
 }
 

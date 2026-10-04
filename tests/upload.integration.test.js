@@ -142,6 +142,43 @@ describe('POST /api/batches/upload/:sheet — upload endpoint', () => {
     });
   });
 
+  describe('successful upload — CSV file', () => {
+    test('uploads and parses valid CSV data successfully for benefits', async () => {
+      const csvContent =
+        'Batch Name,Schedule Name,Arguments,Trigger Needed\n' +
+        'TestCsvBatch1,benefits_daily_6am,-Xmx512m,Y\n' +
+        'TestCsvBatch2,benefits_daily_8am,-Xmx1024m,N\n';
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', Buffer.from(csvContent), { filename: 'benefits.csv', contentType: 'text/csv' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sheet).toBe('benefits');
+      expect(res.body.count).toBe(2);
+
+      const getRes = await request(app).get('/api/batches?sheet=benefits');
+      expect(getRes.body.data.some((b) => b.batchName === 'TestCsvBatch1')).toBe(true);
+    });
+
+    test('uploads and parses valid CSV data successfully for tax', async () => {
+      const csvContent =
+        'Batch Name/Job Name,Schedule Name/ Job Group Name,Batch Arguments/JVM Arguments\n' +
+        'TaxCsvBatch1,benefits_weekly_monday_515pm,-Xms256m\n';
+      const res = await request(app)
+        .post('/api/batches/upload/tax')
+        .attach('file', Buffer.from(csvContent), { filename: 'tax.csv', contentType: 'text/csv' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sheet).toBe('tax');
+      expect(res.body.count).toBe(1);
+
+      const getRes = await request(app).get('/api/batches?sheet=tax');
+      expect(getRes.body.data.some((b) => b.batchName === 'TaxCsvBatch1')).toBe(true);
+    });
+  });
+
   // ── Error paths ──────────────────────────────────────────────────────────
 
   describe('error path — invalid sheet param', () => {
