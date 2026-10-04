@@ -13,18 +13,40 @@ import { useBatchContext } from '../../context/BatchContext';
 import { SHEET_SOURCES, SHEET_LABELS } from '../../utils/constants';
 
 /**
- * BenefitsHandshakeIcon — solid filled handshake matching the Benefits domain
- * design screenshot: two chunky hands clasped with white dividing stroke.
- *
- * SVG path from Phosphor Icons "Handshake (fill)" — Apache 2.0 license.
- * viewBox 256x256. Inherits color via `currentColor` so MUI Tab
- * active/inactive state tokens apply correctly.
+ * BenefitsHandshakeIcon — Handshake icon matching the provided Benefits logo design:
+ * Rounded arms/cuffs on left and right, clasping hands with rounded clasp outline in center.
+ * Inherits color via `currentColor` so MUI Tab active/inactive state tokens apply correctly.
  */
 function BenefitsHandshakeIcon(props) {
   return (
-    <SvgIcon {...props} viewBox="0 0 256 256">
-      {/* Phosphor Icons "handshake-fill" — Apache 2.0 */}
-      <path d="M254.3,107.91,228.78,56.85a16,16,0,0,0-21.47-7.15L182.44,62.13,130.05,48.27a8.14,8.14,0,0,0-4.1,0L73.56,62.13,48.69,49.7a16,16,0,0,0-21.47,7.15L1.7,107.9a16,16,0,0,0,7.15,21.47l27,13.51,55.49,39.63a8.06,8.06,0,0,0,2.71,1.25l64,16a8,8,0,0,0,7.6-2.1l40-40,15.08-15.08,26.42-13.21a16,16,0,0,0,7.15-21.46Zm-54.89,33.37L165,113.72a8,8,0,0,0-10.68.61C136.51,132.27,116.66,130,104,122L147.24,80h31.81l27.21,54.41Zm-41.87,41.86L99.42,168.61l-49.2-35.14,28-56L128,64.28l9.8,2.59-45,43.68-.08.09a16,16,0,0,0,2.72,24.81c20.56,13.13,45.37,11,64.91-5L188,152.66Zm-25.72,34.8a8,8,0,0,1-7.75,6.06,8.13,8.13,0,0,1-1.95-.24L80.41,213.33a7.89,7.89,0,0,1-2.71-1.25L51.35,193.26a8,8,0,0,1,9.3-13l25.11,17.94L126,208.24A8,8,0,0,1,131.82,217.94Z" />
+    <SvgIcon {...props} viewBox="0 0 32 22">
+      {/*
+        Exact geometric silhouette of the reference handshake logo:
+        - Flat horizontal rounded cuff bars on the left and right sides
+        - Center interlocking handshake angled at 45 degrees
+        - Distinctive curved white boundary loop wrapping over the top knuckle down into the clasp
+      */}
+      {/* Left horizontal cuff bar */}
+      <rect x="0" y="7" width="8.5" height="8" rx="3.5" fill="currentColor" />
+      {/* Right horizontal cuff bar */}
+      <rect x="23.5" y="7" width="8.5" height="8" rx="3.5" fill="currentColor" />
+      {/* Clasping hand shape */}
+      <path
+        fill="currentColor"
+        d="M 6.5,7.2 L 13.8,1.6 C 15.4,0.4 17.6,0.6 19,2 L 20.8,3.8 C 22.2,5.2 22.2,7.4 20.8,8.8 L 19.4,10.2 L 20.5,11.3 C 21.1,11.9 21.1,12.9 20.5,13.5 C 19.9,14.1 18.9,14.1 18.3,13.5 L 17.8,13 L 19.5,14.7 C 20.1,15.3 20.1,16.3 19.5,16.9 C 18.9,17.5 17.9,17.5 17.3,16.9 L 15.5,15.1 L 16.5,16.1 C 17.1,16.7 17.1,17.7 16.5,18.3 C 15.9,18.9 14.9,18.9 14.3,18.3 L 11.5,15.5 L 6.5,14.8 Z"
+      />
+      <path
+        fill="currentColor"
+        d="M 25.5,14.8 L 18.2,20.4 C 16.6,21.6 14.4,21.4 13,20 L 11.2,18.2 C 9.8,16.8 9.8,14.6 11.2,13.2 L 12.6,11.8 L 11.5,10.7 C 10.9,10.1 10.9,9.1 11.5,8.5 C 12.1,7.9 13.1,7.9 13.7,8.5 L 14.2,9 L 12.5,7.3 C 11.9,6.7 11.9,5.7 12.5,5.1 C 13.1,4.5 14.1,4.5 14.7,5.1 L 16.5,6.9 L 15.5,5.9 C 14.9,5.3 14.9,4.3 15.5,3.7 C 16.1,3.1 17.1,3.1 17.7,3.7 L 20.5,6.5 L 25.5,7.2 Z"
+      />
+      {/* White dividing channel curve between clasping hands */}
+      <path
+        d="M 13.2 9.5 C 12.1 10.6 12.1 12.4 13.2 13.5 C 14.3 14.6 16.1 14.6 17.2 13.5 L 20.4 10.3"
+        fill="none"
+        stroke="var(--mui-palette-background-paper, #ffffff)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </SvgIcon>
   );
 }

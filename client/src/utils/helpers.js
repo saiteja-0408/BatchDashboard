@@ -60,3 +60,55 @@ export async function copyToClipboard(text) {
     return false;
   }
 }
+
+/**
+ * Helper to determine status string for a row.
+ * Returns 'Biz Error', 'OK', or other string representation.
+ * @param {object} row
+ * @returns {string}
+ */
+export function getRowStatus(row) {
+  if (!row) return '—';
+  // Check explicit status string
+  if (typeof row.status === 'string' && row.status.trim() === 'Biz Error') return 'Biz Error';
+  if (typeof row._status === 'string' && row._status.trim() === 'Biz Error') return 'Biz Error';
+  // Check flag fields (string or boolean or number)
+  const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
+  if (isFlagTrue(row.biz_error_flag) || isFlagTrue(row.biz_error) || isFlagTrue(row.bizError)) {
+    return 'Biz Error';
+  }
+  if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n') return 'OK';
+  return row.status ?? row._status ?? row.biz_error_flag ?? '—';
+}
+
+/**
+ * Sorts status report rows prioritizing Biz Error.
+ * Mode:
+ *   'biz_top' / 'biz_top_asc' : Biz Errors top in original order, others in original order
+ *   'default'                 : Original order (unmodified)
+ * @param {Array<object>} rows
+ * @param {'default'|'biz_top'|'biz_top_asc'|'biz_top_desc'} sortOrder
+ * @returns {Array<object>}
+ */
+export function sortStatusRows(rows, sortOrder) {
+  if (!rows || rows.length === 0 || !sortOrder || sortOrder === 'default') {
+    return rows;
+  }
+  const bizErrors = [];
+  const others = [];
+
+  rows.forEach((row) => {
+    if (getRowStatus(row) === 'Biz Error') {
+      bizErrors.push(row);
+    } else {
+      others.push(row);
+    }
+  });
+
+  if (sortOrder === 'biz_top_desc') {
+    return [...bizErrors, ...[...others].reverse()];
+  }
+
+  // 'biz_top' / 'biz_top_asc'
+  return [...bizErrors, ...others];
+}

@@ -16,11 +16,12 @@ import {
   Box, Typography, Alert, Chip,
   Table, TableHead, TableBody, TableRow, TableCell,
   TableContainer, Paper, Skeleton, CircularProgress,
-  TextField, InputAdornment, IconButton,
+  TextField, InputAdornment, IconButton, TableSortLabel,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon  from '@mui/icons-material/Clear';
 import { useStatusReport } from '../../hooks/useStatusReport';
+import { getRowStatus, sortStatusRows } from '../../utils/helpers';
 
 /** Debounce delay — matches SearchBar.jsx */
 const DEBOUNCE_MS = 350;
@@ -56,9 +57,10 @@ const COLUMNS = [
   { id: '_status',          label: 'Status',       minWidth: 130, flex: 1   },
 ];
 
-/** Status chip derived from biz_error_flag */
-function StatusChip({ flag }) {
-  if (flag === 'Y') {
+/** Status chip derived from biz_error_flag / row status */
+function StatusChip({ row }) {
+  const statusStr = getRowStatus(row);
+  if (statusStr === 'Biz Error') {
     return (
       <Chip
         label="Biz Error"
@@ -67,7 +69,7 @@ function StatusChip({ flag }) {
       />
     );
   }
-  if (flag === 'N') {
+  if (statusStr === 'OK') {
     return (
       <Chip
         label="OK"
@@ -76,9 +78,9 @@ function StatusChip({ flag }) {
       />
     );
   }
-  return <Typography variant="caption" color="text.secondary">{flag ?? '—'}</Typography>;
+  return <Typography variant="caption" color="text.secondary">{statusStr}</Typography>;
 }
-StatusChip.propTypes = { flag: PropTypes.string };
+StatusChip.propTypes = { row: PropTypes.object.isRequired };
 
 /** Skeleton rows while loading */
 function SkeletonRows({ rows = 5 }) {
@@ -140,6 +142,12 @@ export function StatusReportTab({ enabled }) {
   // ── Local search state (same pattern as SearchBar.jsx) ────────────────────
   const [searchInput, setSearchInput]   = useState('');
   const [searchQuery, setSearchQuery]   = useState('');
+  // ── Status sort state: 'default' | 'biz_top' (2-state toggle: sorted <-> normal) ──
+  const [statusSortOrder, setStatusSortOrder] = useState('default');
+
+  const handleStatusHeaderClick = () => {
+    setStatusSortOrder((prev) => (prev === 'default' ? 'biz_top' : 'default'));
+  };
 
   // Debounce: push to searchQuery 350ms after the user stops typing
   useEffect(() => {
@@ -147,32 +155,36 @@ export function StatusReportTab({ enabled }) {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Reset search when the tab is re-entered (enabled transitions false → true)
+  // Reset search and sort when the tab is re-entered (enabled transitions false → true)
   // This matches the BatchContext clearSearch() called by SheetTabs on tab switch.
   const prevEnabled = React.useRef(enabled);
   useEffect(() => {
     if (!prevEnabled.current && enabled) {
       setSearchInput('');
       setSearchQuery('');
+      setStatusSortOrder('default');
     }
     prevEnabled.current = enabled;
   }, [enabled]);
 
   const allRows = envelope?.data ?? [];
 
-  // ── Client-side filter ────────────────────────────────────────────────────
+  // ── Client-side filter & sort ─────────────────────────────────────────────
   const filteredRows = useMemo(() => {
-    if (!searchQuery.trim()) return allRows;
-    const q = searchQuery.toLowerCase();
-    return allRows.filter((row) =>
-      COLUMNS.some((col) => {
-        if (!SEARCHABLE_IDS.has(col.id)) return false;
-        const val = row[col.id];
-        if (val === null || val === undefined) return false;
-        return String(val).toLowerCase().includes(q);
-      })
-    );
-  }, [allRows, searchQuery]);
+    let list = allRows;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = allRows.filter((row) =>
+        COLUMNS.some((col) => {
+          if (!SEARCHABLE_IDS.has(col.id)) return false;
+          const val = row[col.id];
+          if (val === null || val === undefined) return false;
+          return String(val).toLowerCase().includes(q);
+        })
+      );
+    }
+    return sortStatusRows(list, statusSortOrder);
+  }, [allRows, searchQuery, statusSortOrder]);
 
   const showTable  = (isFetching || allRows.length > 0) && !isIdle;
   const noResults  = !isFetching && searchQuery.trim() && filteredRows.length === 0 && allRows.length > 0;
@@ -286,9 +298,25 @@ export function StatusReportTab({ enabled }) {
                       whiteSpace: { xs: 'normal', md: 'nowrap' },
                       lineHeight: 1.3,
                       py:         { xs: 1, xl: 1.25 },
+                      cursor:     col.id === '_status' ? 'pointer' : 'default',
+                      userSelect: col.id === '_status' ? 'none' : 'auto',
                     }}
+                    onClick={col.id === '_status' ? handleStatusHeaderClick : undefined}
                   >
-                    {col.label}
+                    {col.id === '_status' ? (
+                      <TableSortLabel
+                        active={statusSortOrder !== 'default'}
+                        direction="asc"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStatusHeaderClick();
+                        }}
+                      >
+                        {col.label}
+                      </TableSortLabel>
+                    ) : (
+                      col.label
+                    )}
                   </TableCell>
                 ))}
               </TableRow>
@@ -310,40 +338,53 @@ export function StatusReportTab({ enabled }) {
               )}
 
               {/* Data rows */}
-              {!isFetching && filteredRows.map((row, idx) => (
-                <TableRow key={idx} hover>
-                  {COLUMNS.map((col) => (
-                    <TableCell
-                      key={col.id}
-                      sx={{
-                        // Fluid row font — improves data density on large screens
-                        fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
-                        py:         { xs: 0.75, xl: 1 },
-                        // job_name / parent_job_name may be long PascalCase — allow wrap
-                        // job_group uses underscore tokens — keep on one line, clip with ellipsis
-                        whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
-                          ? 'normal'
-                          : 'nowrap',
-                        wordBreak:    col.id === 'job_name' || col.id === 'parent_job_name'
-                          ? 'break-word'
-                          : 'normal',
-                        overflow:     'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: col.id === 'job_name'
-                          ? { xs: 180, md: 220, xl: 320 }
-                          : col.id === 'job_group' || col.id === 'parent_job_group'
-                            ? { xs: 140, md: 180, xl: 240 }
-                            : 'none',
-                      }}
-                    >
-                      {col.id === '_status'
-                        ? <StatusChip flag={row.biz_error_flag} />
-                        : formatCell(row[col.id], col.id)
-                      }
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
+              {!isFetching && filteredRows.map((row, idx) => {
+                const isBizError = getRowStatus(row) === 'Biz Error';
+                return (
+                  <TableRow
+                    key={idx}
+                    hover
+                    className={isBizError ? 'biz-error-row' : ''}
+                    sx={{
+                      backgroundColor: isBizError ? '#fff3e0 !important' : 'inherit',
+                      '&:hover': {
+                        backgroundColor: isBizError ? '#ffe0b2 !important' : undefined,
+                      },
+                    }}
+                  >
+                    {COLUMNS.map((col) => (
+                      <TableCell
+                        key={col.id}
+                        sx={{
+                          // Fluid row font — improves data density on large screens
+                          fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
+                          py:         { xs: 0.75, xl: 1 },
+                          // job_name / parent_job_name may be long PascalCase — allow wrap
+                          // job_group uses underscore tokens — keep on one line, clip with ellipsis
+                          whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
+                            ? 'normal'
+                            : 'nowrap',
+                          wordBreak:    col.id === 'job_name' || col.id === 'parent_job_name'
+                            ? 'break-word'
+                            : 'normal',
+                          overflow:     'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: col.id === 'job_name'
+                            ? { xs: 180, md: 220, xl: 320 }
+                            : col.id === 'job_group' || col.id === 'parent_job_group'
+                              ? { xs: 140, md: 180, xl: 240 }
+                              : 'none',
+                        }}
+                      >
+                        {col.id === '_status'
+                          ? <StatusChip row={row} />
+                          : formatCell(row[col.id], col.id)
+                        }
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>

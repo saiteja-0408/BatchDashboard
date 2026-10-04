@@ -18,6 +18,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchStatusReport } from '../services/apiService';
+import { STATUS_REPORT_REFRESH_INTERVAL_MS } from '../utils/constants';
 
 const STATUS_REPORT_QUERY_KEY = ['status-report'];
 
@@ -40,7 +41,9 @@ export function useStatusReport(enabled = false) {
     queryFn:              () => fetchStatusReport(false),
     enabled,
     staleTime:            0,
+    refetchInterval:      enabled ? STATUS_REPORT_REFRESH_INTERVAL_MS : false,
     refetchOnWindowFocus: false,
+    retry:                1,
   });
 
   /**

@@ -83,10 +83,20 @@ export function useBatchModal() {
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+const STORAGE_TAB_KEY = 'batch_dashboard_active_sheet';
+const DEFAULT_TAB     = 'status-report';
+
 export function BatchProvider({ children }) {
   // ── Data / UI state (search, active tab) ──────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeSheet, setActiveSheet] = useState('benefits');
+  const [activeSheet, setActiveSheet] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_TAB_KEY) || localStorage.getItem(STORAGE_TAB_KEY);
+      return saved || DEFAULT_TAB;
+    } catch {
+      return DEFAULT_TAB;
+    }
+  });
 
   // ── Modal state via reducer (single dispatch = single render pass) ─────────
   const [modalState, dispatchModal] = useReducer(modalReducer, MODAL_INITIAL);
@@ -96,6 +106,12 @@ export function BatchProvider({ children }) {
 
   const handleSetActiveSheet = useCallback((sheet) => {
     setActiveSheet(sheet);
+    try {
+      sessionStorage.setItem(STORAGE_TAB_KEY, sheet);
+      localStorage.setItem(STORAGE_TAB_KEY, sheet);
+    } catch {
+      // Ignore storage write errors (e.g. private browsing restrictions)
+    }
     setSearchQuery('');
   }, []);
 

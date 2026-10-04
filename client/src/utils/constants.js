@@ -25,6 +25,25 @@ export const API_PATHS = {
 /** Default auto-refresh interval for the current-tasks column (ms). */
 export const CURRENT_TASKS_REFRESH_MS = 60_000;
 
+/** Default and parsed polling interval for Status Report (ms). */
+const DEFAULT_STATUS_REPORT_REFRESH_INTERVAL_MS = 10_000;
+
+export function parseStatusReportRefreshInterval(envVal) {
+  if (envVal === undefined || envVal === null || envVal === '') {
+    return DEFAULT_STATUS_REPORT_REFRESH_INTERVAL_MS;
+  }
+  const parsed = Number(envVal);
+  if (isNaN(parsed) || !isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_STATUS_REPORT_REFRESH_INTERVAL_MS;
+  }
+  return parsed;
+}
+
+export const STATUS_REPORT_REFRESH_INTERVAL_MS = parseStatusReportRefreshInterval(
+  (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS || import.meta.env.REACT_APP_STATUS_REPORT_REFRESH_INTERVAL_MS)) ||
+  (typeof process !== 'undefined' && process.env && (process.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS || process.env.REACT_APP_STATUS_REPORT_REFRESH_INTERVAL_MS))
+);
+
 // ── Sheet sources ─────────────────────────────────────────────────────────────
 export const SHEET_SOURCES = ['status-report', 'benefits', 'tax'];
 
