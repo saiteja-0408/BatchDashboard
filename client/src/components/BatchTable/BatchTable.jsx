@@ -49,6 +49,7 @@ import { SORTABLE_COLUMNS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
  */
 
 const VIRTUAL_ROW_HEIGHT = 44; // Fixed height in px per desktop row
+const OVERSCAN_COUNT = 5;      // Number of extra rows to render above and below viewport
 
 /**
  * Feature flag — flip to `true` to restore the Current Task column.
