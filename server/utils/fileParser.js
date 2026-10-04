@@ -17,7 +17,113 @@
  */
 
 const ExcelJS = require('exceljs');
+const XLSX = require('xlsx');
 const { COLUMN_MAP, SHEET_LOG_PATHS } = require('../config/columnMapping.config');
+
+/**
+ * Universal fallback parsing using XLSX library (SheetJS).
+ * Supports .xls, .xlsx, .xlsm, .xlsb, and other spreadsheet formats.
+ * Always targets the FIRST worksheet (index 0) when defaultSheetSource is provided.
+ *
+ * @param {Buffer|string} source - Buffer or file path
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
+ * @returns {{ rows: Object[], warnings: string[] }}
+ */
+function parseWithXLSXLibrary(source, defaultSheetSource = null) {
+  const warnings = [];
+  const allRows = [];
+
+  const readOptions = {
+    type: Buffer.isBuffer(source) ? 'buffer' : 'file',
+    cellDates: true,
+    cellText: false,
+    raw: false,
+    dense: false,
+  };
+
+  const workbook = typeof source === 'string'
+    ? XLSX.readFile(source, readOptions)
+    : XLSX.read(source, readOptions);
+
+  if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+    return { rows: [], warnings: ['Workbook contains no sheets.'] };
+  }
+
+  // When targeting a specific sheet source, always process the FIRST sheet (index 0)
+  const sheetNamesToProcess = defaultSheetSource
+    ? [workbook.SheetNames[0]]
+    : workbook.SheetNames;
+
+  for (const sheetName of sheetNamesToProcess) {
+    const sheetSource = defaultSheetSource || detectSheetSource(sheetName, null);
+    if (!sheetSource) {
+      warnings.push(`Sheet "${sheetName}" is not a recognised Benefits or Tax sheet — skipped.`);
+      continue;
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
+
+    // Convert sheet to 2D array of raw values
+    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', blankrows: false });
+    if (!sheetData || sheetData.length === 0) {
+      warnings.push(`Sheet "${sheetName}" has no data rows — skipped.`);
+      continue;
+    }
+
+    // Row 0 is header row
+    const headerRow = sheetData[0];
+    const headerIndex = {};
+
+    headerRow.forEach((cellVal, colIdx) => {
+      const rawText = String(cellVal || '').trim();
+      const fieldName = matchHeaderField(rawText);
+      if (fieldName) {
+        headerIndex[colIdx] = fieldName;
+      }
+    });
+
+    // Positional fallback if no batchName header was identified
+    const mappedFields = Object.values(headerIndex).filter(Boolean);
+    if (!mappedFields.includes('batchName')) {
+      headerIndex[0] = 'batchName';
+      if (headerRow.length > 1 && !mappedFields.includes('scheduleName')) {
+        headerIndex[1] = headerRow.length === 2 ? 'scheduleName' : 'arguments';
+      }
+      if (headerRow.length > 2 && !mappedFields.includes('scheduleName')) {
+        headerIndex[2] = 'scheduleName';
+      }
+      if (headerRow.length > 3 && !mappedFields.includes('triggerNeeded')) {
+        headerIndex[3] = 'triggerNeeded';
+      }
+    }
+
+    const logDir = SHEET_LOG_PATHS[sheetSource] || '';
+
+    // Data rows start from index 1
+    for (let r = 1; r < sheetData.length; r++) {
+      const row = sheetData[r];
+      if (!row || row.length === 0) continue;
+
+      const mapped = { sheetSource, logDir, batchName: '', arguments: '', scheduleName: '', triggerNeeded: '' };
+      let hasValue = false;
+
+      row.forEach((cellVal, colIdx) => {
+        const fieldName = headerIndex[colIdx];
+        if (!fieldName) return;
+        const cleanVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
+        mapped[fieldName] = cleanVal;
+        if (cleanVal) hasValue = true;
+      });
+
+      if (hasValue && mapped.batchName) {
+        allRows.push(mapped);
+      }
+    }
+  }
+
+  return { rows: allRows, warnings };
+}
 
 /**
  * Normalise a header string for matching:
@@ -291,45 +397,78 @@ function parseCsvBuffer(buffer, defaultSheetSource = 'benefits') {
  * @returns {Promise<{ rows: Object[], warnings: string[] }>}
  */
 async function parseExcelFile(filePath, defaultSheetSource = null) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(filePath);
-
-  // If defaultSheetSource was not explicitly passed, infer it from the file name
+  // Infer defaultSheetSource from file path if not passed
   if (!defaultSheetSource && typeof filePath === 'string') {
     const lowerPath = filePath.toLowerCase();
     if (lowerPath.includes('benefit')) defaultSheetSource = 'benefits';
     else if (lowerPath.includes('tax')) defaultSheetSource = 'tax';
   }
 
-  return _extractRowsFromWorkbook(workbook, defaultSheetSource);
+  try {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    return _extractRowsFromWorkbook(workbook, defaultSheetSource);
+  } catch (excelJsErr) {
+    console.warn(`[fileParser] ExcelJS failed to read ${filePath} (${excelJsErr.message}), falling back to universal XLSX parser...`);
+    try {
+      return parseWithXLSXLibrary(filePath, defaultSheetSource);
+    } catch (xlsxLibErr) {
+      console.error(`[fileParser] Universal XLSX parser also failed for ${filePath}: ${xlsxLibErr.message}`);
+      throw excelJsErr;
+    }
+  }
 }
 
 /**
- * Reads an Excel or CSV file from an in-memory Buffer and returns an array of raw
- * row objects. Used by the upload endpoint so no temp file is needed.
+ * Reads an Excel (.xlsx, .xls, .xlsm, .xlsb) or CSV file from an in-memory Buffer
+ * and returns an array of raw row objects.
  *
- * @param {Buffer} buffer - raw .xlsx/.xls/.csv file bytes
+ * @param {Buffer} buffer - raw spreadsheet file bytes
  * @param {'benefits'|'tax'} [defaultSheetSource=null]
  * @returns {Promise<{ rows: Object[], warnings: string[] }>}
  */
 async function parseExcelBuffer(buffer, defaultSheetSource = null) {
-  // Check if buffer is CSV by checking first bytes / attempting exceljs load
-  try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    return _extractRowsFromWorkbook(workbook, defaultSheetSource);
-  } catch (xlsxErr) {
-    // If ExcelJS failed, attempt CSV parsing
+  // Check if buffer is a zip-based Office Open XML format (.xlsx, .xlsm, .xlsb)
+  // ZIP files always start with magic bytes PK\x03\x04 (0x50, 0x4b, 0x03, 0x04)
+  const isZip = buffer && buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+
+  if (isZip) {
     try {
-      const csvResult = parseCsvBuffer(buffer, defaultSheetSource);
-      if (csvResult.rows.length > 0) {
-        return csvResult;
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      return _extractRowsFromWorkbook(workbook, defaultSheetSource);
+    } catch (excelJsErr) {
+      // If ExcelJS failed on valid zip, fallback to universal XLSX parser
+      try {
+        return parseWithXLSXLibrary(buffer, defaultSheetSource);
+      } catch (xlsxLibErr) {
+        throw excelJsErr;
       }
-    } catch {
-      // Fall through to throw original error
     }
-    throw xlsxErr;
   }
+
+  // 2. For binary Excel (.xls BIFF), try universal SheetJS parser first
+  try {
+    const xlsxResult = parseWithXLSXLibrary(buffer, defaultSheetSource);
+    if (xlsxResult.rows.length > 0) {
+      return xlsxResult;
+    }
+  } catch (xlsxLibErr) {
+    // Fall through to CSV
+  }
+
+  // 3. Check if plain text / CSV format
+  try {
+    const csvResult = parseCsvBuffer(buffer, defaultSheetSource);
+    if (csvResult.rows.length > 0) {
+      return csvResult;
+    }
+  } catch (csvErr) {
+    // Fall through
+  }
+
+  // 4. Final attempt with XLSX library
+  return parseWithXLSXLibrary(buffer, defaultSheetSource);
 }
 
 module.exports = { parseExcelFile, parseExcelBuffer };

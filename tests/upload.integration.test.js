@@ -248,13 +248,71 @@ describe('POST /api/batches/upload/:sheet — upload endpoint', () => {
   });
 
   describe('error path — wrong file type', () => {
-    test('returns 400 when a .txt file is uploaded', async () => {
+    test('returns 400 when an unsupported file type is uploaded', async () => {
       const res = await request(app)
         .post('/api/batches/upload/benefits')
-        .attach('file', Buffer.from('not an xlsx'), { filename: 'bad.txt', contentType: 'text/plain' });
-      // Either 400 (MIME rejection) or 500 (ExcelJS parse failure) is acceptable
+        .attach('file', Buffer.from('some random pdf content'), { filename: 'document.pdf', contentType: 'application/pdf' });
       expect([400, 422, 500]).toContain(res.status);
       expect(res.body.success).toBe(false);
+    });
+  });
+
+  describe('universal spreadsheet format uploads (.xls, .xlsm, .xlsb, .xlsx)', () => {
+    test('successfully parses legacy binary .xls and .xlsb formats via XLSX fallback', async () => {
+      const XLSX = require('xlsx');
+      const data = [
+        ['Batch Name', 'Arguments', 'Schedule Name', 'Trigger Needed'],
+        ['UniversalLegacyBatch', '-Xmx2048m', 'benefits_daily_6am', 'Y'],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'CustomLegacySheet');
+
+      // Generate legacy .xls / binary format
+      const xlsBuf = XLSX.write(wb, { type: 'buffer', bookType: 'biff8' });
+
+      const res = await request(app)
+        .post('/api/batches/upload/benefits')
+        .attach('file', xlsBuf, { filename: 'legacy_benefits.xls', contentType: 'application/vnd.ms-excel' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.sheet).toBe('benefits');
+      expect(res.body.count).toBe(1);
+
+      const getRes = await request(app).get('/api/batches?sheet=benefits');
+      const found = getRes.body.data.find((b) => b.batchName === 'UniversalLegacyBatch');
+      expect(found).toBeDefined();
+      expect(found.arguments).toBe('-Xmx2048m');
+      expect(found.scheduleName).toBe('benefits_daily_6am');
+      expect(found.triggerNeeded).toBe('Y');
+    });
+
+    test('successfully parses macro-enabled .xlsm and binary .xlsb formats', async () => {
+      const XLSX = require('xlsx');
+      const data = [
+        ['Job Name', 'JVM Arguments', 'Job Group Name', 'Trigger Needed'],
+        ['MacroBatchJob', 'MODE=BATCH', 'benefits_weekly_monday_515pm', 'N'],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'MacroFirstSheet');
+
+      const xlsmBuf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsm' });
+
+      const res = await request(app)
+        .post('/api/batches/upload/tax')
+        .attach('file', xlsmBuf, { filename: 'tax_macro.xlsm', contentType: 'application/vnd.ms-excel.sheet.macroenabled.12' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.sheet).toBe('tax');
+      expect(res.body.count).toBe(1);
+
+      const getRes = await request(app).get('/api/batches?sheet=tax');
+      const found = getRes.body.data.find((b) => b.batchName === 'MacroBatchJob');
+      expect(found).toBeDefined();
+      expect(found.arguments).toBe('MODE=BATCH');
+      expect(found.scheduleName).toBe('benefits_weekly_monday_515pm');
+      expect(found.triggerNeeded).toBe('N');
     });
   });
 

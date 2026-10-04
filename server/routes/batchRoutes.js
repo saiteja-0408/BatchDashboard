@@ -18,10 +18,13 @@ const currentTasksController = require('../controllers/currentTasksController');
 const statusReportController = require('../controllers/statusReportController');
 const { asyncWrapper }       = require('../middlewares/errorHandler');
 
-// multer memory storage — file bytes land in req.file.buffer; nothing touches disk
+const os = require('os');
+const path = require('path');
+
+// Multer memory storage with platform-safe memory buffer handling
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits:  { fileSize: 10 * 1024 * 1024 }, // 10 MB max
+  limits:  { fileSize: 50 * 1024 * 1024 }, // 50 MB max for universal file support
 });
 
 const router = express.Router();

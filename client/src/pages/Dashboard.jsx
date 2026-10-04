@@ -190,7 +190,7 @@ export default function Dashboard() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.xls,.xlsm,.xlsb,.csv"
                 style={{ display: 'none' }}
                 onChange={handleFileChange}
               />
