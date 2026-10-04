@@ -7,14 +7,14 @@
 
 import React from 'react';
 import { Tabs, Tab, Box } from '@mui/material';
-import HealthAndSafetyIcon  from '@mui/icons-material/HealthAndSafety';
+import HandshakeIcon        from '@mui/icons-material/Handshake';
 import AccountBalanceIcon   from '@mui/icons-material/AccountBalance';
 import AssessmentIcon       from '@mui/icons-material/Assessment';
 import { useBatchContext } from '../../context/BatchContext';
 import { SHEET_SOURCES, SHEET_LABELS } from '../../utils/constants';
 
 const SHEET_ICONS = {
-  benefits:        <HealthAndSafetyIcon fontSize="small" />,
+  benefits:        <HandshakeIcon       fontSize="small" />,
   tax:             <AccountBalanceIcon  fontSize="small" />,
   'status-report': <AssessmentIcon      fontSize="small" />,
 };
