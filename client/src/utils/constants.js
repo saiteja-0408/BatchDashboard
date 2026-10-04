@@ -22,8 +22,11 @@ export const API_PATHS = {
   uploadSheet: (sheet) => `${API_BASE}/batches/upload/${sheet}`,
   // Current-tasks endpoint — polled every 60s from the BatchTable
   currentTasks: (sheet) => `${API_BASE}/current-tasks${sheet ? `?sheet=${sheet}` : ''}`,
-  // Status report endpoint — live DB2 data for the Status Report tab
-  statusReport: (force = false) => `${API_BASE}/status-report${force ? '?force=true' : ''}`,
+  // Status report endpoint — plain request served from server cache when warm
+  statusReport: () => `${API_BASE}/status-report`,
+  // Status report — ?fresh=true bypasses server cache and always hits the DB.
+  // Used by the scheduled polling path so every interval tick gets live data.
+  statusReportFresh: () => `${API_BASE}/status-report?fresh=true`,
 };
 
 /** Default auto-refresh interval for the current-tasks column (ms). */
@@ -32,12 +35,27 @@ export const CURRENT_TASKS_REFRESH_MS = 60_000;
 /** Default and parsed polling interval for Status Report (ms). */
 const DEFAULT_STATUS_REPORT_REFRESH_INTERVAL_MS = 10_000;
 
+/**
+ * Parses the VITE_STATUS_REPORT_REFRESH_INTERVAL_MS environment value.
+ *
+ * Return values:
+ *   - Positive number  → polling interval in ms (e.g. 10000 = 10 s)
+ *   - 0                → disable auto-polling (user explicitly opted out)
+ *   - undefined/empty/NaN/negative → fall back to DEFAULT (10 s)
+ *
+ * @param {string|number|null|undefined} envVal
+ * @returns {number}  Interval in ms, or 0 to disable polling
+ */
 export function parseStatusReportRefreshInterval(envVal) {
+  // Absent or empty — use the safe default
   if (envVal === undefined || envVal === null || envVal === '') {
     return DEFAULT_STATUS_REPORT_REFRESH_INTERVAL_MS;
   }
   const parsed = Number(envVal);
-  if (isNaN(parsed) || !isFinite(parsed) || parsed <= 0) {
+  // Explicit 0 — operator wants to disable auto-polling
+  if (parsed === 0) return 0;
+  // Invalid or negative — fall back to default
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return DEFAULT_STATUS_REPORT_REFRESH_INTERVAL_MS;
   }
   return parsed;

@@ -151,42 +151,66 @@ describe('GET /api/status-report', () => {
     });
   });
 
-  // ── 3. force=true bypasses cache ────────────────────────────────────────
-  describe('force=true cache bypass', () => {
+  // ── 3a. ?fresh=true bypasses cache (canonical polling parameter) ─────────
+  describe('?fresh=true cache bypass (scheduled poll path)', () => {
     const REFRESHED_ROWS = [
-      { ...SAMPLE_ROWS[0], biz_error_flag: 'N' }, // changed flag
+      { ...SAMPLE_ROWS[0], biz_error_flag: 'N' }, // changed data simulating new DB result
     ];
 
     beforeEach(async () => {
       db2Service.queryDb2.mockResolvedValueOnce(SAMPLE_ROWS);
-      // Prime cache
+      // Prime the cache so it is warm for the bypass test
       await request(app).get('/api/status-report');
-      // Second DB2 call returns different (fresher) data
+      // Second DB2 call returns fresher data
       db2Service.queryDb2.mockResolvedValueOnce(REFRESHED_ROWS);
     });
 
     test('queries DB2 even though cache is warm', async () => {
-      await request(app).get('/api/status-report?force=true');
-      expect(db2Service.queryDb2).toHaveBeenCalledTimes(2); // prime + force
+      await request(app).get('/api/status-report?fresh=true');
+      expect(db2Service.queryDb2).toHaveBeenCalledTimes(2); // prime + fresh
     });
 
     test('returns fresh data from DB2, not cached data', async () => {
-      const res = await request(app).get('/api/status-report?force=true');
+      const res = await request(app).get('/api/status-report?fresh=true');
       expect(res.body.count).toBe(1);
       expect(res.body.data[0].biz_error_flag).toBe('N');
     });
 
-    test('cacheHit is false when force=true', async () => {
-      const res = await request(app).get('/api/status-report?force=true');
+    test('cacheHit is false when ?fresh=true', async () => {
+      const res = await request(app).get('/api/status-report?fresh=true');
       expect(res.body.cacheHit).toBe(false);
     });
 
-    test('refreshed data is cached — next normal request is a cache hit', async () => {
-      await request(app).get('/api/status-report?force=true');
+    test('refreshed data is cached — next plain request is a cache hit', async () => {
+      await request(app).get('/api/status-report?fresh=true');
       jest.clearAllMocks();
       const res = await request(app).get('/api/status-report');
       expect(res.body.cacheHit).toBe(true);
       expect(db2Service.queryDb2).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── 3b. ?force=true backward-compatibility alias ─────────────────────────
+  describe('?force=true cache bypass (legacy alias)', () => {
+    const REFRESHED_ROWS = [
+      { ...SAMPLE_ROWS[0], biz_error_flag: 'N' },
+    ];
+
+    beforeEach(async () => {
+      db2Service.queryDb2.mockResolvedValueOnce(SAMPLE_ROWS);
+      await request(app).get('/api/status-report');
+      db2Service.queryDb2.mockResolvedValueOnce(REFRESHED_ROWS);
+    });
+
+    test('?force=true also queries DB2 when cache is warm', async () => {
+      await request(app).get('/api/status-report?force=true');
+      expect(db2Service.queryDb2).toHaveBeenCalledTimes(2);
+    });
+
+    test('?force=true returns fresh data from DB2', async () => {
+      const res = await request(app).get('/api/status-report?force=true');
+      expect(res.body.cacheHit).toBe(false);
+      expect(res.body.data[0].biz_error_flag).toBe('N');
     });
   });
 
@@ -271,5 +295,56 @@ describe('cacheService unit tests', () => {
 
   test('DEFAULT_TTL_MS is 5 minutes', () => {
     expect(cache.DEFAULT_TTL_MS).toBe(5 * 60 * 1000);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+describe('resolveStatusReportTtl — env-driven TTL resolution', () => {
+  const { resolveStatusReportTtl } = require('../server/controllers/statusReportController');
+
+  const _origEnv = { ...process.env };
+
+  afterEach(() => {
+    // Restore env vars modified by each test
+    Object.keys(process.env).forEach((k) => {
+      if (!(k in _origEnv)) delete process.env[k];
+    });
+    Object.assign(process.env, _origEnv);
+  });
+
+  test('uses STATUS_REPORT_CACHE_TTL_MS when set', () => {
+    process.env.STATUS_REPORT_CACHE_TTL_MS = '15000';
+    delete process.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS;
+    expect(resolveStatusReportTtl()).toBe(15_000);
+  });
+
+  test('falls back to VITE_STATUS_REPORT_REFRESH_INTERVAL_MS when TTL not set', () => {
+    delete process.env.STATUS_REPORT_CACHE_TTL_MS;
+    process.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS = '20000';
+    expect(resolveStatusReportTtl()).toBe(20_000);
+  });
+
+  test('STATUS_REPORT_CACHE_TTL_MS takes precedence over VITE_ var', () => {
+    process.env.STATUS_REPORT_CACHE_TTL_MS = '8000';
+    process.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS = '20000';
+    expect(resolveStatusReportTtl()).toBe(8_000);
+  });
+
+  test('defaults to 10 000 ms when neither env var is set', () => {
+    delete process.env.STATUS_REPORT_CACHE_TTL_MS;
+    delete process.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS;
+    expect(resolveStatusReportTtl()).toBe(10_000);
+  });
+
+  test('defaults to 10 000 ms when value is non-numeric', () => {
+    process.env.STATUS_REPORT_CACHE_TTL_MS = 'invalid';
+    expect(resolveStatusReportTtl()).toBe(10_000);
+  });
+
+  test('defaults to 10 000 ms when value is zero or negative', () => {
+    process.env.STATUS_REPORT_CACHE_TTL_MS = '0';
+    expect(resolveStatusReportTtl()).toBe(10_000);
+    process.env.STATUS_REPORT_CACHE_TTL_MS = '-5000';
+    expect(resolveStatusReportTtl()).toBe(10_000);
   });
 });

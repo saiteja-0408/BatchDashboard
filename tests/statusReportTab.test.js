@@ -419,12 +419,19 @@ describe('StatusReportTab unit tests', () => {
   });
 
   describe('Polling interval parsing and fallback', () => {
+    /**
+     * Mirrors the updated parseStatusReportRefreshInterval in constants.js.
+     * Key change: 0 now returns 0 (disable polling) instead of the default.
+     */
     function parseStatusReportRefreshInterval(envVal) {
       if (envVal === undefined || envVal === null || envVal === '') {
         return 10000;
       }
       const parsed = Number(envVal);
-      if (isNaN(parsed) || !isFinite(parsed) || parsed <= 0) {
+      // Explicit 0 → disable polling (operator opt-out)
+      if (parsed === 0) return 0;
+      // Invalid or negative → fall back to default
+      if (!Number.isFinite(parsed) || parsed < 0) {
         return 10000;
       }
       return parsed;
@@ -444,8 +451,12 @@ describe('StatusReportTab unit tests', () => {
       expect(parseStatusReportRefreshInterval('abc100')).toBe(10000);
     });
 
-    test('returns 10000 when environment variable is <= 0', () => {
-      expect(parseStatusReportRefreshInterval('0')).toBe(10000);
+    test('returns 0 when environment variable is "0" — disables polling', () => {
+      expect(parseStatusReportRefreshInterval('0')).toBe(0);
+      expect(parseStatusReportRefreshInterval(0)).toBe(0);
+    });
+
+    test('returns 10000 when environment variable is negative', () => {
       expect(parseStatusReportRefreshInterval('-5000')).toBe(10000);
     });
 

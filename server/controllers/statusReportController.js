@@ -7,39 +7,73 @@
  *   ORDER BY start_time DESC
  *
  * Caching strategy:
- *   - Results are cached in cacheService for STATUS_REPORT_TTL_MS (5 minutes).
- *   - Cache key: STATUS_REPORT_CACHE_KEY (constant, query is always the same).
- *   - ?force=true bypasses the cache and forces a fresh DB2 query, then refreshes
- *     the cache entry.
- *   - Response includes `cacheHit` boolean and `cachedAt` ISO timestamp.
- *   - A `cache-hit` response header mirrors the cacheHit boolean for dev tooling.
+ *   The server-side cache TTL is driven by STATUS_REPORT_CACHE_TTL_MS, which is
+ *   read from the STATUS_REPORT_CACHE_TTL_MS environment variable.
+ *
+ *   Default: the value of VITE_STATUS_REPORT_REFRESH_INTERVAL_MS (same as the
+ *   frontend polling interval) — this guarantees that every browser poll after
+ *   the TTL has expired triggers a fresh DB query. If neither variable is set,
+ *   the fallback is 10 seconds (matching the default frontend interval).
+ *
+ *   Query parameters:
+ *     ?fresh=true  — bypass the cache and execute a live DB query.
+ *                    The fresh result replaces the cache entry.
+ *                    Use this for scheduled polling so every interval tick
+ *                    always hits the database.
+ *     ?force=true  — alias for ?fresh=true (backward-compatible).
+ *
+ *   Response includes `cacheHit` boolean and `cachedAt` ISO timestamp so the
+ *   frontend can display "last updated" information accurately.
+ *
+ *   A `cache-hit` response header mirrors cacheHit for browser DevTools.
  *
  * Error handling:
  *   - DB2 connection/config errors → 503 with structured JSON error body.
- *   - asyncWrapper in routes forwards any thrown errors to the global error handler.
+ *   - Failed queries never populate the cache, so the next poll retries DB2.
+ *   - asyncWrapper in routes forwards thrown errors to the global error handler.
  */
 
 'use strict';
 
-const { queryDb2 }  = require('../services/db2Service');
-const cache         = require('../services/cacheService');
+const { queryDb2 } = require('../services/db2Service');
+const cache        = require('../services/cacheService');
 
-/**
- * Cache key for the status report query.
- * Changing this constant invalidates all existing cache entries on server restart.
- */
+/** Cache key — constant because the query is always identical. */
 const STATUS_REPORT_CACHE_KEY = 'status_report_today';
 
 /**
- * TTL for the status report cache entry in milliseconds.
- * Change this value here to adjust caching behaviour without touching anything else.
- * Default: 5 minutes (300,000 ms).
+ * TTL for the server-side cache in milliseconds.
+ *
+ * Resolution order:
+ *   1. STATUS_REPORT_CACHE_TTL_MS env var  — explicit server-side TTL override
+ *   2. VITE_STATUS_REPORT_REFRESH_INTERVAL_MS env var — align with frontend poll
+ *   3. 10 000 ms (10 s) — safe default matching the default frontend interval
+ *
+ * Setting this equal to (or slightly less than) VITE_STATUS_REPORT_REFRESH_INTERVAL_MS
+ * ensures the cache has expired by the time the next browser poll arrives, so
+ * every poll executes a fresh DB query rather than returning stale cached data.
  */
-const STATUS_REPORT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+function resolveStatusReportTtl() {
+  const raw =
+    process.env.STATUS_REPORT_CACHE_TTL_MS ||
+    process.env.VITE_STATUS_REPORT_REFRESH_INTERVAL_MS ||
+    null;
+
+  if (raw !== null) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return 10_000; // 10 s default
+}
 
 /**
- * The DB2 query — sourced from a single constant so it can be changed in one place.
+ * Server-side cache TTL in milliseconds.
+ * Evaluated once at module load so it reflects the env at startup.
  */
+const STATUS_REPORT_TTL_MS = resolveStatusReportTtl();
+
+/** DB2 query — defined once so it can be changed in a single place. */
 const STATUS_REPORT_SQL = `
   SELECT *
   FROM db2prd1.T_Z_QRTZ_STATUS_REPORT
@@ -48,10 +82,13 @@ const STATUS_REPORT_SQL = `
 `.trim();
 
 /**
- * GET /api/status-report[?force=true]
+ * GET /api/status-report[?fresh=true][?force=true]
  *
  * Returns today's status report rows from DB2, cached for STATUS_REPORT_TTL_MS.
- * Pass ?force=true to bypass the cache and force a fresh DB2 query.
+ *
+ * ?fresh=true (or legacy ?force=true) — bypass the cache and execute a live
+ * DB query. The result replaces the cache entry so the next plain request is
+ * still served from cache until the TTL expires again.
  *
  * Response shape:
  *   {
@@ -68,10 +105,11 @@ const STATUS_REPORT_SQL = `
  * @param {import('express').Response} res
  */
 async function getStatusReport(req, res) {
-  const forceRefresh = req.query.force === 'true';
+  // ?fresh=true is the canonical poll bypass; ?force=true is the legacy alias
+  const bypassCache = req.query.fresh === 'true' || req.query.force === 'true';
 
-  // ── Cache lookup (skip when force=true) ───────────────────────────────────
-  if (!forceRefresh) {
+  // ── Cache lookup (skip when bypass requested) ─────────────────────────────
+  if (!bypassCache) {
     const hit = cache.get(STATUS_REPORT_CACHE_KEY);
     if (hit) {
       res.setHeader('cache-hit', 'true');
@@ -85,7 +123,7 @@ async function getStatusReport(req, res) {
     }
   }
 
-  // ── Cache miss (or force) — query DB2 ─────────────────────────────────────
+  // ── Cache miss or bypass — execute live DB query ──────────────────────────
   const rawRows = await queryDb2(STATUS_REPORT_SQL);
 
   // DB2 returns column names in UPPERCASE — normalise to lowercase so the
@@ -96,7 +134,7 @@ async function getStatusReport(req, res) {
     )
   );
 
-  // Persist to cache — always refresh on force=true too
+  // Persist to cache — replaces any previous entry (including after a bypass)
   cache.set(STATUS_REPORT_CACHE_KEY, rows, STATUS_REPORT_TTL_MS);
 
   const freshEntry = cache.get(STATUS_REPORT_CACHE_KEY);
@@ -111,4 +149,9 @@ async function getStatusReport(req, res) {
   });
 }
 
-module.exports = { getStatusReport, STATUS_REPORT_CACHE_KEY, STATUS_REPORT_TTL_MS };
+module.exports = {
+  getStatusReport,
+  STATUS_REPORT_CACHE_KEY,
+  STATUS_REPORT_TTL_MS,
+  resolveStatusReportTtl,
+};

@@ -90,20 +90,32 @@ export async function fetchCurrentTasks(sheet) {
   return res.data;  // return full envelope { success, sheet, count, serverTime, data }
 }
 /**
- * Fetches the status report data from DB2 (via server-side cache).
- * Pass force=true to bypass the server cache and force a fresh DB2 query.
+ * Fetches the status report from the server.
+ * The server may return a cached result if the cache is still warm.
+ * Used for the initial load when the Status Report tab is first opened.
  *
- * Uses DB_TIMEOUT_MS (60 s) instead of the default 15 s because this call
- * hits DB2 / PostgreSQL on a cold connection and may return a large result set.
- *
- * @param {boolean} [force=false]
  * @returns {Promise<{ data: Object[], cacheHit: boolean, cachedAt: string, count: number }>}
  */
-export async function fetchStatusReport(force = false) {
-  const res = await client.get(API_PATHS.statusReport(force), {
+export async function fetchStatusReport() {
+  const res = await client.get(API_PATHS.statusReport(), {
     timeout: DB_TIMEOUT_MS,
   });
-  // Return the full envelope — consumer needs cacheHit + cachedAt
+  return res.data;
+}
+
+/**
+ * Fetches the status report with ?fresh=true, bypassing the server-side cache.
+ * Used exclusively by the scheduled polling path so every interval tick
+ * executes a live database query rather than returning stale cached data.
+ *
+ * Uses DB_TIMEOUT_MS (60 s) for the same reason as fetchStatusReport.
+ *
+ * @returns {Promise<{ data: Object[], cacheHit: boolean, cachedAt: string, count: number }>}
+ */
+export async function fetchStatusReportFresh() {
+  const res = await client.get(API_PATHS.statusReportFresh(), {
+    timeout: DB_TIMEOUT_MS,
+  });
   return res.data;
 }
 
