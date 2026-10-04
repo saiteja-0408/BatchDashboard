@@ -28,12 +28,11 @@ import {
   TableSortLabel, Paper, Typography, Box, Chip, Card, CardContent,
   CardActionArea, Skeleton, Stack, Tooltip, useMediaQuery, useTheme,
 } from '@mui/material';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { useBatchContext }    from '../../context/BatchContext';
 import { useSort }            from '../../hooks/useSort';
 import { useCurrentTasks }    from '../../hooks/useBatches';
 import { CurrentTaskBadge }   from '../CurrentTaskBadge/CurrentTaskBadge';
-import { SORTABLE_COLUMNS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
+import { SORTABLE_COLUMNS }   from '../../utils/constants';
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -87,7 +86,6 @@ function TriggerBadge({ value }) {
 function SkeletonRows({ count = 8 }) {
   return Array.from({ length: count }).map((_, i) => (
     <TableRow key={i}>
-      <TableCell />
       {SORTABLE_COLUMNS.map((col) => (
         <TableCell key={col.id}>
           <Skeleton variant="text" width="80%" />
@@ -107,25 +105,17 @@ SkeletonRows.propTypes = { count: PropTypes.number };
  * updates for an unrelated batch.
  */
 const BatchCard = React.memo(function BatchCard({ batch, currentTask, onClick }) {
-  const isValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
   return (
-    <Card elevation={1} sx={{ mb: 1, borderLeft: isValid ? undefined : '3px solid #ed6c02' }}>
+    <Card elevation={1} sx={{ mb: 1 }}>
       <CardActionArea onClick={() => onClick(batch)}>
         <CardContent sx={{ pb: '12px !important' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
             <Typography variant="subtitle2" fontWeight={700} sx={{ wordBreak: 'break-word', flex: 1, mr: 1 }}>
               {batch.batchName}
             </Typography>
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              {!isValid && (
-                <Tooltip title="Unknown schedule name">
-                  <WarningAmberIcon fontSize="small" color="warning" />
-                </Tooltip>
-              )}
-              {SHOW_CURRENT_TASK && currentTask && (
-                <CurrentTaskBadge currentTask={currentTask} isLoading={false} />
-              )}
-            </Stack>
+            {SHOW_CURRENT_TASK && currentTask && (
+              <CurrentTaskBadge currentTask={currentTask} isLoading={false} />
+            )}
           </Stack>
           <Typography variant="caption" color="text.secondary" display="block">
             {batch.scheduleName || '—'}
@@ -147,18 +137,8 @@ BatchCard.propTypes = {
   onClick:     PropTypes.func.isRequired,
 };
 
-// ── Static sx variants hoisted outside BatchRow ───────────────────────────────
-// Defining these outside the component means Emotion generates the CSS class
-// exactly once at module load time instead of on every render of every row.
-// With 800+ rows and a re-render cycle on each 60s poll, this eliminates
-// 800+ repeated Emotion hash lookups per cycle.
-const ROW_SX_VALID = {
+const ROW_SX = {
   cursor: 'pointer',
-  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
-};
-const ROW_SX_INVALID = {
-  cursor: 'pointer',
-  borderLeft: '3px solid #ed6c02',
   '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
 };
 
@@ -167,8 +147,6 @@ const ROW_SX_INVALID = {
  * actually changed re-render during the 60s poll cycle.
  */
 const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, onClick }) {
-  const isValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
-
   const handleClick = useCallback(() => onClick(batch), [batch, onClick]);
   const handleKeyDown = useCallback(
     (e) => { if (e.key === 'Enter') onClick(batch); },
@@ -180,18 +158,10 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
     <TableRow
       hover
       tabIndex={0}
-      sx={isValid ? ROW_SX_VALID : ROW_SX_INVALID}
+      sx={ROW_SX}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
-      {/* Warning icon cell */}
-      <TableCell sx={{ px: 1, width: 44, minWidth: 44, boxSizing: 'border-box' }}>
-        {!isValid && (
-          <Tooltip title={`Unknown schedule: "${batch.scheduleName}"`}>
-            <WarningAmberIcon fontSize="small" color="warning" />
-          </Tooltip>
-        )}
-      </TableCell>
       <TableCell sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         <Tooltip title={batch.batchName} placement="top-start">
           <span>{batch.batchName}</span>
@@ -361,16 +331,13 @@ export function BatchTable({ batches, isLoading, isError }) {
         }}
       >
         <colgroup>
-          <col style={{ width: 44 }} />
-          <col style={{ width: '28%' }} />
+          <col style={{ width: '30%' }} />
           <col style={{ width: '25%' }} />
-          <col style={{ width: '35%' }} />
+          <col style={{ width: '33%' }} />
           <col style={{ width: '12%' }} />
         </colgroup>
         <TableHead>
           <TableRow>
-            {/* Warning indicator column — no sort */}
-            <TableCell sx={{ width: 44, minWidth: 44, px: 1, backgroundColor: 'background.paper' }} />
             {SORTABLE_COLUMNS.map((col) => (
               <TableCell
                 key={col.id}
@@ -410,7 +377,7 @@ export function BatchTable({ batches, isLoading, isError }) {
             <>
               {paddingTop > 0 && (
                 <TableRow sx={{ height: `${paddingTop}px !important`, border: 0 }}>
-                  <TableCell colSpan={5} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
+                  <TableCell colSpan={4} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
                 </TableRow>
               )}
               {visibleBatches.map((batch) => (
@@ -424,7 +391,7 @@ export function BatchTable({ batches, isLoading, isError }) {
               ))}
               {paddingBottom > 0 && (
                 <TableRow sx={{ height: `${paddingBottom}px !important`, border: 0 }}>
-                  <TableCell colSpan={5} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
+                  <TableCell colSpan={4} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
                 </TableRow>
               )}
             </>

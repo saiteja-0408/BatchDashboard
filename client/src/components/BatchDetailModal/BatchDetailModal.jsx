@@ -18,10 +18,9 @@ import React, { useCallback, useMemo } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Box, Typography, Chip, Divider,
-  IconButton, Tooltip, Alert,
+  IconButton,
 } from '@mui/material';
 import CloseIcon        from '@mui/icons-material/Close';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { CommandViewer } from '../CommandViewer/CommandViewer';
 import { SHEET_LABELS }  from '../../utils/constants';
 import { useBatchModal } from '../../context/BatchContext';
@@ -64,17 +63,6 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
           <Typography variant="h6" component="span" sx={{ wordBreak: 'break-word' }}>
             {batch?.batchName}
           </Typography>
-          {batch && !batch.scheduleValid && batch.scheduleName && (
-            <Tooltip title={`Schedule "${batch.scheduleName}" is not in the approved list`}>
-              <Chip
-                icon={<WarningAmberIcon fontSize="small" />}
-                label="Unknown Schedule"
-                color="warning"
-                size="small"
-                sx={{ ml: 1, verticalAlign: 'middle' }}
-              />
-            </Tooltip>
-          )}
           <Box mt={0.5}>
             <Chip label={sheetLabel} size="small" variant="outlined" sx={{ mr: 0.5 }} />
           </Box>
@@ -93,18 +81,7 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
 
       <DialogContent>
         {batch && (
-          <>
-            {/* Schedule validity warning */}
-            {!batch.scheduleValid && batch.scheduleName && (
-              <Alert severity="warning" sx={{ mb: 2, fontSize: '0.82rem' }}>
-                Schedule name <strong>"{batch.scheduleName}"</strong> is not in the
-                approved list. This row was loaded from Excel as-is.
-              </Alert>
-            )}
-
-            {/* 4-section command panel */}
-            <CommandViewer batch={batch} />
-          </>
+          <CommandViewer batch={batch} />
         )}
       </DialogContent>
 

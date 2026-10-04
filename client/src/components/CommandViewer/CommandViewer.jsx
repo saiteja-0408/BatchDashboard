@@ -18,8 +18,7 @@ import {
 } from '@mui/material';
 import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
 import CheckIcon        from '@mui/icons-material/Check';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { buildQclientLine, LOG_PATH_DEFS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
+import { buildQclientLine, LOG_PATH_DEFS } from '../../utils/constants';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 // ── CommandBlock ──────────────────────────────────────────────────────────────
@@ -117,27 +116,16 @@ Section.propTypes = {
 export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   if (!batch) return null;
 
-  const scheduleIsValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
   const domain = batch.sheetSource; // 'benefits' | 'tax'
   const logDefs = LOG_PATH_DEFS[domain] ?? [];
 
   return (
     <Stack spacing={0} divider={<Divider sx={{ my: 2 }} />}>
 
-      {/* ── Warnings ── */}
+      {/* ── Missing Schedule Alert ── */}
       {!batch.scheduleName && (
         <Alert severity="error" sx={{ fontSize: '0.82rem' }}>
           No schedule name found for this batch — commands cannot be constructed.
-        </Alert>
-      )}
-      {!scheduleIsValid && batch.scheduleName && (
-        <Alert
-          severity="warning"
-          icon={<WarningAmberIcon fontSize="inherit" />}
-          sx={{ fontSize: '0.82rem' }}
-        >
-          Schedule <strong>"{batch.scheduleName}"</strong> is not in the approved list.
-          Verify before running.
         </Alert>
       )}
 
@@ -182,6 +170,5 @@ CommandViewer.propTypes = {
     arguments:     PropTypes.string,
     logDir:        PropTypes.string,
     sheetSource:   PropTypes.string,
-    scheduleValid: PropTypes.bool,
   }),
 };

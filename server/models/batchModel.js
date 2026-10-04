@@ -10,12 +10,7 @@
  * Plus two fields derived by the parser:
  *   sheetSource   — 'benefits' | 'tax'
  *   logDir        — the cd command for that sheet's log directory
- *
- * Plus one field derived here:
- *   scheduleValid — true if scheduleName is in the approved list
  */
-
-const { VALID_SCHEDULE_NAMES } = require('../config/constants');
 
 /**
  * @typedef {Object} BatchModel
@@ -25,7 +20,6 @@ const { VALID_SCHEDULE_NAMES } = require('../config/constants');
  * @property {string}  triggerNeeded  - 'Y' | 'N' | '' — whether a trigger is needed
  * @property {string}  sheetSource    - 'benefits' | 'tax'
  * @property {string}  logDir         - cd command for the log directory
- * @property {boolean} scheduleValid  - true if scheduleName is in the approved list
  */
 
 /**
@@ -60,9 +54,6 @@ function createBatch(raw) {
     logDir:        safeStr(raw.logDir),         // set by parser
   };
 
-  // Validate schedule name against the approved list (exact case match)
-  batch.scheduleValid = batch.scheduleName !== '' && VALID_SCHEDULE_NAMES.has(batch.scheduleName);
-
   return batch;
 }
 
@@ -76,9 +67,6 @@ function validateBatch(batch) {
   const warnings = [];
   if (!batch.batchName)    warnings.push(`Row missing batchName — skipped.`);
   if (!batch.scheduleName) warnings.push(`[${batch.batchName}] Missing scheduleName.`);
-  if (!batch.scheduleValid && batch.scheduleName) {
-    warnings.push(`[${batch.batchName}] Unknown scheduleName: "${batch.scheduleName}"`);
-  }
   return warnings;
 }
 

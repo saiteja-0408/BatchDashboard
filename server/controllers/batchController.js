@@ -45,15 +45,14 @@ async function searchBatches(req, res) {
 }
 
 /**
- * GET /api/batches/filter?sheet=benefits|tax&scheduleValid=true|false
- * Filter batches by sheet and/or schedule validity.
+ * GET /api/batches/filter?sheet=benefits|tax
+ * Filter batches by sheet.
  */
 async function filterBatches(req, res) {
-  const { sheet, scheduleValid } = req.query;
+  const { sheet } = req.query;
   await excelService.syncFromDisk(sheet);
   const results = excelService.filter({
-    sheetSource:   sheet,
-    scheduleValid: scheduleValid,
+    sheetSource: sheet,
   });
   res.json({ success: true, count: results.length, data: results });
 }

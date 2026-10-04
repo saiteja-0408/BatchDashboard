@@ -227,18 +227,13 @@ function search(query, sheetSource) {
 }
 
 /**
- * Filters the store by sheetSource and/or scheduleValid flag.
- * @param {{ sheetSource?: string, scheduleValid?: string }} filters
+ * Filters the store by sheetSource.
+ * @param {{ sheetSource?: string }} filters
  * @returns {import('../models/batchModel').BatchModel[]}
  */
 function filter(filters) {
   return _store.filter((b) => {
     if (filters.sheetSource && b.sheetSource !== filters.sheetSource) return false;
-    // scheduleValid filter: 'true' | 'false'
-    if (filters.scheduleValid !== undefined && filters.scheduleValid !== '') {
-      const expected = filters.scheduleValid === 'true';
-      if (b.scheduleValid !== expected) return false;
-    }
     return true;
   });
 }
@@ -251,16 +246,10 @@ function getSummary() {
   const total    = _store.length;
   const benefits = _store.filter((b) => b.sheetSource === 'benefits').length;
   const tax      = _store.filter((b) => b.sheetSource === 'tax').length;
-  const invalid  = _store.filter((b) => !b.scheduleValid).length;
 
   const bySheet = { Benefits: benefits, Tax: tax };
 
-  const byScheduleValidity = {
-    Valid:   total - invalid,
-    Invalid: invalid,
-  };
-
-  return { total, benefits, tax, invalid, bySheet, byScheduleValidity };
+  return { total, benefits, tax, invalid: 0, bySheet };
 }
 
 /**

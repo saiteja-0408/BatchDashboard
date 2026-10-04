@@ -13,8 +13,6 @@ const ACTIVE_STATUSES = ['Success', 'Running'];
 
 /**
  * Complete approved list of Schedule Name / Job Group Name values.
- * Rows whose scheduleName is NOT in this set are loaded but flagged with
- * scheduleValid: false so the UI can show a warning badge.
  */
 const VALID_SCHEDULE_NAMES = new Set([
   'MSAccess_reports_saturday_4am',
