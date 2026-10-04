@@ -221,7 +221,7 @@ BatchRow.propTypes = {
  */
 export function BatchTable({ batches, isLoading, isError }) {
   const { openBatchModal, activeSheet } = useBatchContext();
-  const { sortedData, sortConfig, requestSort } = useSort(batches);
+  const { sortedData, sortConfig, requestSort } = useSort(batches, activeSheet);
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 

@@ -10,23 +10,30 @@ import { compareValues } from '../utils/helpers';
 
 /**
  * @param {Object[]} data  - Array of objects to sort
+ * @param {string} [scopeKey] - Optional sheet scope (e.g. 'benefits' | 'tax') to preserve per-sheet sort configs
  * @returns {{ sortedData, sortConfig, requestSort }}
  */
-export function useSort(data) {
-  // { key: string, direction: 'asc' | 'desc' } | null
-  const [sortConfig, setSortConfig] = useState(null);
+export function useSort(data, scopeKey) {
+  // Map of scopeKey -> { key: string, direction: 'asc' | 'desc' }
+  const [sortConfigs, setSortConfigs] = useState({});
+
+  const activeScope = scopeKey || '_default';
+  const sortConfig = sortConfigs[activeScope] || null;
 
   /**
-   * Toggles sort direction for the given column key:
+   * Toggles sort direction for the given column key in the current scope:
    *   - Clicking a new column sets direction to 'asc'
    *   - Clicking the active column toggles between 'asc' and 'desc'
    */
   const requestSort = useCallback((key) => {
-    setSortConfig((prev) => {
-      if (!prev || prev.key !== key) return { key, direction: 'asc' };
-      return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+    setSortConfigs((prev) => {
+      const current = prev[activeScope];
+      const next = (!current || current.key !== key)
+        ? { key, direction: 'asc' }
+        : { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+      return { ...prev, [activeScope]: next };
     });
-  }, []);
+  }, [activeScope]);
 
   const sortedData = useMemo(() => {
     if (!sortConfig || !data) return data ?? [];

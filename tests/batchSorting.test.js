@@ -32,6 +32,14 @@ function requestSort(currentConfig, key) {
   return { key, direction: currentConfig.direction === 'asc' ? 'desc' : 'asc' };
 }
 
+function requestScopedSort(configs, scope, key) {
+  const current = configs[scope];
+  const next = (!current || current.key !== key)
+    ? { key, direction: 'asc' }
+    : { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+  return { ...configs, [scope]: next };
+}
+
 describe('compareValues helper', () => {
   describe('Ascending order (order="asc")', () => {
     test('sorts string values case-insensitively and naturally', () => {
@@ -118,6 +126,18 @@ describe('compareValues helper', () => {
       let sort = { key: 'batchName', direction: 'desc' };
       sort = requestSort(sort, 'scheduleName');
       expect(sort).toEqual({ key: 'scheduleName', direction: 'asc' });
+    });
+
+    test('preserves independent sort configs across sheet tabs', () => {
+      let configs = {};
+      configs = requestScopedSort(configs, 'benefits', 'batchName');
+      configs = requestScopedSort(configs, 'tax', 'scheduleName');
+      expect(configs.benefits).toEqual({ key: 'batchName', direction: 'asc' });
+      expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
+
+      configs = requestScopedSort(configs, 'benefits', 'batchName');
+      expect(configs.benefits).toEqual({ key: 'batchName', direction: 'desc' });
+      expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
     });
   });
 });

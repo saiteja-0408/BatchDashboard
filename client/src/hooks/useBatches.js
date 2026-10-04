@@ -16,19 +16,33 @@ import {
 } from '../services/apiService';
 import { CURRENT_TASKS_REFRESH_MS } from '../utils/constants';
 
-const STALE_TIME = 60_000; // 1 minute
+const STALE_TIME = 5 * 60_000; // 5 minutes cache for static batch data (invalidated on upload)
 
 /**
- * Fetches all batches for a given sheet source.
- * @param {string} sheet - 'benefits' | 'tax'
+ * Fetches all batches for all sheets once, or for a specific sheet source.
+ *
+ * Performance optimization:
+ * - When `sheet` is provided (e.g. 'benefits' or 'tax'), it fetches all batches
+ *   under the root query key ['batches', 'all'] and uses `select` to filter
+ *   the relevant sheet's data client-side.
+ * - This ensures both Benefits and Tax sheets are loaded in a single request,
+ *   stored in cache once, and switching between Benefits and Tax tabs becomes
+ *   an instantaneous, zero-network, zero-flicker client-side view switch.
+ *
+ * @param {string|null} sheet - 'benefits' | 'tax' | null
  */
 export function useAllBatches(sheet) {
   return useQuery({
-    queryKey:  ['batches', sheet],
-    queryFn:   () => fetchAllBatches(sheet),
+    queryKey:  ['batches', 'all'],
+    queryFn:   () => fetchAllBatches(),
     staleTime: STALE_TIME,
     // Disable when sheet is null (e.g. Status Report tab is active)
     enabled:   sheet !== null && sheet !== undefined,
+    select:    (allData) => {
+      if (!allData || !Array.isArray(allData)) return [];
+      if (!sheet) return allData;
+      return allData.filter((b) => b.sheetSource === sheet);
+    },
   });
 }
 
