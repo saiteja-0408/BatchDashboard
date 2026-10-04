@@ -14,7 +14,7 @@ export function SearchBar() {
   const { searchQuery, setSearchQuery } = useBatchContext();
   const [localValue, setLocalValue] = useState(searchQuery);
 
-  // Sync local input with context (e.g., when clearAllFilters is called)
+  // Sync local input with context (e.g., when tab changes and search is cleared)
   useEffect(() => { setLocalValue(searchQuery); }, [searchQuery]);
 
   // Debounce: only push to context after user stops typing

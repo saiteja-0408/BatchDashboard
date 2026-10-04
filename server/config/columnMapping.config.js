@@ -24,6 +24,7 @@ const COLUMN_MAP = {
   'Batch Name/Job Name':           'batchName',
   'Batch Arguments/JVM Arguments': 'arguments',
   'Schedule Name/ Job Group Name': 'scheduleName',
+  'Trigger Needed':                'triggerNeeded',
 };
 
 /**

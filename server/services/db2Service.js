@@ -1,63 +1,160 @@
 /**
- * db2Service.js — DB2 query execution wrapper.
+ * db2Service.js — Status Report query execution wrapper.
  *
- * Provides a single `queryDb2(sql, params)` function used by all controllers.
+ * Supports three backends, selected via the STATUS_REPORT_DB env var:
  *
- * MOCK MODE:
- *   Activated when either of these conditions is true:
- *     1. USE_MOCK_DATA=true is set in .env
- *     2. Any required DB2 env var (DB2_HOST, DB2_DATABASE, DB2_USER, DB2_PASSWORD)
- *        is missing — so the server works out-of-the-box locally without credentials.
+ *   STATUS_REPORT_DB=db2  (default)
+ *     Uses ibm_db to query DB2. Requires DB2_HOST, DB2_DATABASE,
+ *     DB2_USER, DB2_PASSWORD to be set.
  *
- *   In mock mode, queryDb2() ignores the SQL and returns the exported
- *   MOCK_STATUS_REPORT_ROWS from mockData.js.
+ *   STATUS_REPORT_DB=pg
+ *     Uses the pg (node-postgres) pool to query PostgreSQL. Requires
+ *     PG_HOST, PG_DATABASE, PG_USER, PG_PASSWORD to be set.
  *
- * PRODUCTION MODE:
- *   When USE_MOCK_DATA is absent/false AND all DB2 env vars are set, the real
- *   ibm_db driver is used. No code changes are needed — only .env changes.
+ *   MOCK MODE (either backend)
+ *     Activated when USE_MOCK_DATA=true OR when the required credentials
+ *     for the selected backend are all missing. Returns static mock rows
+ *     from mockData.js — no database connection needed.
  *
- * ibm_db must be installed for production: `npm install ibm_db`
+ * No code changes are needed to switch backends — only .env changes.
  */
 
 'use strict';
 
-const { getDb2ConnectionString } = require('../config/db2.config');
-const { MOCK_STATUS_REPORT_ROWS } = require('./mockData');
+const { getDb2ConnectionString }        = require('../config/db2.config');
+const { getPool, getMissingPgVars }     = require('../config/pg.config');
+const { MOCK_STATUS_REPORT_ROWS }       = require('./mockData');
+
+const REQUIRED_DB2_VARS = ['DB2_HOST', 'DB2_DATABASE', 'DB2_USER', 'DB2_PASSWORD'];
+
+// ── Backend selection ────────────────────────────────────────────────────────
 
 /**
- * Returns true when mock mode is active.
- * Mock mode is on if USE_MOCK_DATA=true OR any required DB2 credential is absent.
+ * Returns the active backend: 'pg' | 'db2'.
+ * Defaults to 'db2' when STATUS_REPORT_DB is absent or unrecognised.
+ * @returns {'pg'|'db2'}
+ */
+function getBackend() {
+  const val = (process.env.STATUS_REPORT_DB || 'db2').toLowerCase().trim();
+  return val === 'pg' ? 'pg' : 'db2';
+}
+
+// ── Mock mode ────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true when mock mode should be used.
+ * Mock mode activates if:
+ *   - USE_MOCK_DATA=true, OR
+ *   - The required credentials for the selected backend are missing.
  *
  * @returns {boolean}
  */
 function isMockMode() {
   if (process.env.USE_MOCK_DATA === 'true') return true;
 
-  const required = ['DB2_HOST', 'DB2_DATABASE', 'DB2_USER', 'DB2_PASSWORD'];
-  return required.some((k) => !process.env[k]);
+  if (getBackend() === 'pg') {
+    return getMissingPgVars().length > 0;
+  }
+  // db2 backend
+  return REQUIRED_DB2_VARS.some((k) => !process.env[k]);
 }
 
+// ── Startup log ──────────────────────────────────────────────────────────────
+
 /**
- * Executes a parameterised DB2 query and returns the result rows as plain objects.
+ * Logs the current backend / mock mode decision at server startup.
+ * Called once from app.js so the operator can immediately see which
+ * data source is active and which .env variables are missing if any.
+ */
+function logStartupMode() {
+  const backend = getBackend();
+
+  if (process.env.USE_MOCK_DATA === 'true') {
+    console.log(
+      `[db2Service] Mode: MOCK  (USE_MOCK_DATA=true — returning static data; ` +
+      `backend=${backend} ignored)`
+    );
+    return;
+  }
+
+  if (backend === 'pg') {
+    const missing = getMissingPgVars();
+    if (missing.length > 0) {
+      console.warn(
+        `[db2Service] Mode: MOCK  (STATUS_REPORT_DB=pg but configuration is incomplete)\n` +
+        '             Provide either PG_CONNECTION_URL or all of:\n' +
+        '               PG_HOST, PG_DATABASE, PG_USER, PG_PASSWORD'
+      );
+    } else if (process.env.PG_CONNECTION_URL) {
+      // Mask password in the URL for safe logging
+      const maskedUrl = process.env.PG_CONNECTION_URL.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:****@');
+      console.log(`[db2Service] Mode: LIVE  (STATUS_REPORT_DB=pg — ${maskedUrl})`);
+    } else {
+      console.log(
+        `[db2Service] Mode: LIVE  (STATUS_REPORT_DB=pg — connecting to ` +
+        `${process.env.PG_HOST}:${process.env.PG_PORT || 5432}/` +
+        `${process.env.PG_DATABASE})`
+      );
+    }
+    return;
+  }
+
+  // DB2 backend
+  const missing = REQUIRED_DB2_VARS.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.warn(
+      `[db2Service] Mode: MOCK  (STATUS_REPORT_DB=db2 but the following required ` +
+      `.env variables are missing: ${missing.join(', ')})\n` +
+      '             Set all four variables to switch to live DB2 mode:\n' +
+      '               DB2_HOST, DB2_DATABASE, DB2_USER, DB2_PASSWORD'
+    );
+  } else {
+    console.log(
+      `[db2Service] Mode: LIVE  (STATUS_REPORT_DB=db2 — connecting to ` +
+      `${process.env.DB2_HOST}:${process.env.DB2_PORT || 50000})`
+    );
+  }
+}
+
+// ── Query execution ──────────────────────────────────────────────────────────
+
+/**
+ * Executes a query against the configured backend and returns rows.
  *
- * In mock mode: ignores `sql`/`params` and returns MOCK_STATUS_REPORT_ROWS.
- * In production mode: opens a real ibm_db connection, runs the query, closes it.
+ * In mock mode  : ignores sql/params, returns MOCK_STATUS_REPORT_ROWS.
+ * DB2 backend   : opens an ibm_db connection, runs the query, closes it.
+ * PG  backend   : acquires a pg pool client, runs the query, releases it.
  *
- * @param {string}  sql          — Parameterised SQL (? placeholders)
+ * @param {string}  sql          — SQL statement (? for DB2, $1/$2 for PG)
  * @param {Array}   [params=[]]  — Bound parameter values
  * @returns {Promise<Object[]>}  Array of row objects
- * @throws {Error}               When not in mock mode and the connection/query fails
+ * @throws {Error}               On connection/query failure (non-mock mode)
  */
 async function queryDb2(sql, params = []) {
-  // ── Mock mode: return static data, no DB2 connection needed ─────────────────
+  // ── Mock mode ──────────────────────────────────────────────────────────────
   if (isMockMode()) {
     return MOCK_STATUS_REPORT_ROWS;
   }
 
-  // ── Production mode: use real ibm_db ────────────────────────────────────────
+  const backend = getBackend();
+
+  // ── PostgreSQL backend ─────────────────────────────────────────────────────
+  if (backend === 'pg') {
+    let pool;
+    try {
+      pool = getPool();
+    } catch (cfgErr) {
+      cfgErr.status = 503;
+      throw cfgErr;
+    }
+
+    const result = await pool.query(sql, params.length ? params : undefined);
+    return result.rows;
+  }
+
+  // ── DB2 backend (default) ──────────────────────────────────────────────────
   let ibm_db;
   try {
-    // Require lazily so the server starts cleanly when ibm_db is not installed.
     ibm_db = require('ibm_db'); // eslint-disable-line
   } catch {
     const err = new Error(
@@ -75,7 +172,26 @@ async function queryDb2(sql, params = []) {
     throw cfgErr;
   }
 
-  const conn = await ibm_db.open(connStr);
+  let conn;
+  try {
+    conn = await ibm_db.open(connStr);
+  } catch (connErr) {
+    // SQL30081N = TCP/IP communication error (host unreachable, port closed, firewall)
+    // SQL08001  = connection failure
+    // Give operators a clean message instead of the raw IBM CLI wall of text.
+    const raw = connErr.message || '';
+    const isTcpError = raw.includes('SQL30081N') || raw.includes('SQLSTATE=08001') ||
+                       raw.includes('selectForConnectTimeout') || raw.includes('Communication error');
+    const clean = isTcpError
+      ? `Cannot reach DB2 server at ${process.env.DB2_HOST}:${process.env.DB2_PORT || 50000}. ` +
+        'Check that the host is reachable from this machine, the port is open, and DB2 is running. ' +
+        `(SQLSTATE=08001)`
+      : `DB2 connection failed: ${raw}`;
+    const err = new Error(clean);
+    err.status = 503;
+    throw err;
+  }
+
   try {
     const rows = await conn.query(sql, params);
     return rows;
@@ -84,4 +200,4 @@ async function queryDb2(sql, params = []) {
   }
 }
 
-module.exports = { queryDb2, isMockMode };
+module.exports = { queryDb2, isMockMode, logStartupMode, getBackend };

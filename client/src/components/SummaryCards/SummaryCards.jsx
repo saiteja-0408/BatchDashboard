@@ -1,42 +1,63 @@
 /**
  * SummaryCards.jsx — dashboard summary section.
- * Shows total, by-sheet counts, invalid schedule count, and a pie chart.
+ * Shows total, by-sheet counts, and invalid schedule count as stat cards.
+ * Pie charts removed for a cleaner, faster layout.
  */
 
 import React from 'react';
 import {
-  Grid, Card, CardContent, Typography, Box, Skeleton, Alert,
+  Grid, Card, CardContent, Typography, Skeleton, Alert,
 } from '@mui/material';
-import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts';
 import { useSummary } from '../../hooks/useBatches';
 
-const COLORS = ['#1976d2', '#7c5cd8', '#d32f2f', '#2e7d32'];
-
-function StatCard({ label, value, color }) {
+/**
+ * Memoised stat card — scales from compact mobile to large 4K cards.
+ * On xl+ screens the number uses a larger fluid font to fill the extra space.
+ */
+const StatCard = React.memo(function StatCard({ label, value, color }) {
   return (
-    <Card elevation={2} sx={{ height: '100%' }}>
-      <CardContent>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
+    // elevation={0} → single thin border from theme (no drop-shadow doubling)
+    <Card elevation={0} sx={{ height: '100%' }}>
+      <CardContent
+        sx={{
+          p: { xs: 1.5, sm: 2, lg: 2.5 },
+          '&:last-child': { pb: { xs: 1.5, sm: 2, lg: 2.5 } },
+        }}
+      >
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          gutterBottom
+          noWrap
+          sx={{ fontSize: { xs: '0.75rem', lg: '0.85rem', xl: '0.9rem' } }}
+        >
           {label}
         </Typography>
-        <Typography variant="h4" fontWeight={700} color={color || 'text.primary'}>
+        <Typography
+          variant="h4"
+          fontWeight={700}
+          color={color || 'text.primary'}
+          sx={{
+            // Fluid: compact on phones, large on 1440p/4K
+            fontSize: { xs: '1.6rem', sm: '2rem', md: '2.125rem', xl: '2.5rem' },
+            lineHeight: 1.1,
+          }}
+        >
           {value}
         </Typography>
       </CardContent>
     </Card>
   );
-}
+});
 
 export function SummaryCards() {
   const { data: summary, isLoading, isError } = useSummary();
 
   if (isLoading) {
     return (
-      <Grid container spacing={2} mb={3}>
-        {[...Array(5)].map((_, i) => (
-          <Grid item xs={6} sm={4} md={2} key={i}>
+      <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
+        {[...Array(4)].map((_, i) => (
+          <Grid item xs={6} sm={4} md={3} key={i}>
             <Skeleton variant="rectangular" height={90} sx={{ borderRadius: 2 }} />
           </Grid>
         ))}
@@ -53,65 +74,32 @@ export function SummaryCards() {
     );
   }
 
-  const sheetData = Object.entries(summary.bySheet || {}).map(([name, value]) => ({ name, value }));
-  const validityData = Object.entries(summary.byScheduleValidity || {}).map(([name, value]) => ({ name, value }));
-
   return (
-    <Grid container spacing={2} mb={3}>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Total Batches"     value={summary.total} />
+    /*
+     * Grid breakpoints:
+     *   xs:  2 cards / row  (phones)
+     *   sm:  4 cards / row  (tablets → fills the row)
+     *   xl:  4 cards / row  (1440p — each card widens naturally via auto column width)
+     *
+     * spacing increases on lg+ so cards breathe on large screens.
+     */
+    <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
+      <Grid item xs={6} sm={3}>
+        <StatCard label="Total Batches"    value={summary.total} />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Benefits"          value={summary.benefits} color="primary.main" />
+      <Grid item xs={6} sm={3}>
+        <StatCard label="Benefits"         value={summary.benefits} color="primary.main" />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Tax"               value={summary.tax}      color="secondary.main" />
+      <Grid item xs={6} sm={3}>
+        <StatCard label="Tax"              value={summary.tax}      color="secondary.main" />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Unknown Schedules" value={summary.invalid}  color={summary.invalid > 0 ? 'warning.main' : 'text.secondary'} />
+      <Grid item xs={6} sm={3}>
+        <StatCard
+          label="Unknown Schedules"
+          value={summary.invalid}
+          color={summary.invalid > 0 ? 'warning.main' : 'text.secondary'}
+        />
       </Grid>
-
-      {/* By Sheet pie */}
-      {sheetData.length > 0 && (
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ height: '100%', minHeight: 180 }}>
-            <CardContent>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom>By Sheet</Typography>
-              <ResponsiveContainer width="100%" height={150}>
-                <PieChart>
-                  <Pie dataKey="value" data={sheetData} cx="50%" cy="50%" outerRadius={55} label>
-                    {sheetData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      )}
-
-      {/* Schedule validity pie */}
-      {validityData.length > 0 && (
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ height: '100%', minHeight: 180 }}>
-            <CardContent>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom>Schedule Validity</Typography>
-              <ResponsiveContainer width="100%" height={150}>
-                <PieChart>
-                  <Pie dataKey="value" data={validityData} cx="50%" cy="50%" outerRadius={55} label>
-                    {validityData.map((entry, i) => (
-                      <Cell key={i} fill={entry.name === 'Invalid' ? '#ed6c02' : '#2e7d32'} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      )}
     </Grid>
   );
 }

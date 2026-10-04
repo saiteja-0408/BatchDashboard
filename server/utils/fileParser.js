@@ -52,16 +52,13 @@ function detectSheetSource(sheetName) {
 }
 
 /**
- * Reads an Excel file and returns an array of raw row objects.
- * Each row carries three mapped fields plus sheetSource and logDir.
+ * Internal: walks all sheets in a loaded ExcelJS Workbook and returns rows.
+ * Shared by both parseExcelFile and parseExcelBuffer.
  *
- * @param {string} filePath - Absolute path to the .xlsx file
- * @returns {Promise<{ rows: Object[], warnings: string[] }>}
+ * @param {ExcelJS.Workbook} workbook
+ * @returns {{ rows: Object[], warnings: string[] }}
  */
-async function parseExcelFile(filePath) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(filePath);
-
+function _extractRowsFromWorkbook(workbook) {
   const warnings = [];
   const allRows  = [];
 
@@ -142,4 +139,30 @@ async function parseExcelFile(filePath) {
   return { rows: allRows, warnings };
 }
 
-module.exports = { parseExcelFile };
+/**
+ * Reads an Excel file from disk and returns an array of raw row objects.
+ * Each row carries three mapped fields plus sheetSource and logDir.
+ *
+ * @param {string} filePath - Absolute path to the .xlsx file
+ * @returns {Promise<{ rows: Object[], warnings: string[] }>}
+ */
+async function parseExcelFile(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  return _extractRowsFromWorkbook(workbook);
+}
+
+/**
+ * Reads an Excel file from an in-memory Buffer and returns an array of raw
+ * row objects. Used by the upload endpoint so no temp file is needed.
+ *
+ * @param {Buffer} buffer - raw .xlsx/.xls file bytes
+ * @returns {Promise<{ rows: Object[], warnings: string[] }>}
+ */
+async function parseExcelBuffer(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  return _extractRowsFromWorkbook(workbook);
+}
+
+module.exports = { parseExcelFile, parseExcelBuffer };

@@ -16,7 +16,13 @@ export function AppHeader() {
 
   return (
     <AppBar position="sticky" elevation={1} color="primary">
-      <Toolbar sx={{ gap: 2 }}>
+      {/* Toolbar fills full width — matches Dashboard maxWidth={false} */}
+      <Toolbar
+        sx={{
+          gap: 2,
+          px: { xs: 1.5, sm: 2, md: 3, lg: 4 },
+        }}
+      >
         <Typography
           variant="h6"
           component={Link}
@@ -27,7 +33,12 @@ export function AppHeader() {
         </Typography>
 
         <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
-          <IconButton color="inherit" onClick={toggleDarkMode} size="small">
+          <IconButton
+            color="inherit"
+            onClick={toggleDarkMode}
+            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            sx={{ width: 44, height: 44 }}
+          >
             {isDark ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
         </Tooltip>

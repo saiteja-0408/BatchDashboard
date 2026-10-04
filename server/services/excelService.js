@@ -5,14 +5,16 @@
  * batchName is used as the unique key within a sheet.
  * sheetSource ('benefits' | 'tax') is used for sheet-level filtering.
  *
- * Two load entry-points:
+ * Three load entry-points:
  *   loadFromFiles(benefitsPath, taxPath) — used at server startup,
  *     reads both dedicated files and merges them into one store.
  *   loadFromFile(filePath) — kept for tests; loads a single file
  *     (which may contain both sheets) and replaces the store.
+ *   reloadSheet(sheetSource, buffer) — hot-replaces one sheet's slice
+ *     in the store from an in-memory Buffer (used by the upload endpoint).
  */
 
-const { parseExcelFile } = require('../utils/fileParser');
+const { parseExcelFile, parseExcelBuffer } = require('../utils/fileParser');
 const { createBatch, validateBatch } = require('../models/batchModel');
 
 /**
@@ -174,4 +176,74 @@ function getSummary() {
   return { total, benefits, tax, invalid, bySheet, byScheduleValidity };
 }
 
-module.exports = { loadFromFiles, loadFromFile, getAll, getByName, search, filter, getSummary };
+/**
+ * Hot-replaces a single sheet's records in the in-memory store from a Buffer.
+ * Used by the POST /api/batches/upload endpoint when a user uploads a new file.
+ *
+ * The uploaded file must contain at least one sheet whose name matches the
+ * given sheetSource ('benefits' → sheet name contains "benefit",
+ * 'tax' → sheet name contains "tax").
+ *
+ * After a successful reload the in-memory store for the given sheet is replaced
+ * atomically; the other sheet is left untouched.
+ *
+ * @param {'benefits'|'tax'} sheetSource
+ * @param {Buffer} buffer - raw .xlsx/.xls file contents
+ * @returns {Promise<{ count: number, warnings: string[] }>}
+ */
+async function reloadSheet(sheetSource, buffer) {
+  const { batches, warnings } = await _parseToBatchesFromBuffer(buffer);
+
+  // Only keep rows that belong to the target sheet
+  const incoming = batches.filter((b) => b.sheetSource === sheetSource);
+  if (incoming.length === 0 && warnings.length === 0) {
+    const err = new Error(
+      `Uploaded file contains no rows for the "${sheetSource}" sheet. ` +
+      'Make sure the sheet tab name contains "benefit" or "tax".'
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  // Atomically replace only the target sheet's rows; preserve the other sheet
+  _store = [
+    ..._store.filter((b) => b.sheetSource !== sheetSource),
+    ...incoming,
+  ];
+
+  const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
+  const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
+  console.log(
+    `[excelService] Reloaded "${sheetSource}" sheet from upload: ` +
+    `${incoming.length} row(s). Store now: ${_store.length} total ` +
+    `(${bCount} Benefits, ${tCount} Tax).`
+  );
+  return { count: incoming.length, warnings };
+}
+
+/**
+ * Internal helper: parses a raw Buffer (instead of a file path), validates
+ * rows, and returns a BatchModel[]. Does NOT mutate _store.
+ *
+ * @param {Buffer} buffer
+ * @returns {Promise<{ batches: import('../models/batchModel').BatchModel[], warnings: string[] }>}
+ */
+async function _parseToBatchesFromBuffer(buffer) {
+  const { rows, warnings } = await parseExcelBuffer(buffer);
+
+  if (warnings.length > 0) {
+    warnings.forEach((w) => console.warn(`[excelService] WARNING: ${w}`));
+  }
+
+  const batches = [];
+  for (const row of rows) {
+    const batch         = createBatch(row);
+    const batchWarnings = validateBatch(batch);
+    batchWarnings.forEach((w) => console.warn(`[excelService] VALIDATION: ${w}`));
+    if (batch.batchName) batches.push(batch);
+  }
+
+  return { batches, warnings };
+}
+
+module.exports = { loadFromFiles, loadFromFile, reloadSheet, getAll, getByName, search, filter, getSummary };

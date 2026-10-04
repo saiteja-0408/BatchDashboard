@@ -14,6 +14,8 @@ export const API_PATHS = {
   // batchName must be URL-encoded by the caller
   batchByName: (name, sheet) =>
     `${API_BASE}/batches/${encodeURIComponent(name)}${sheet ? `?sheet=${sheet}` : ''}`,
+  // Upload endpoint — sheet must be 'benefits' or 'tax'
+  uploadSheet: (sheet) => `${API_BASE}/batches/upload/${sheet}`,
   // Current-tasks endpoint — polled every 60s from the BatchTable
   currentTasks: (sheet) => `${API_BASE}/current-tasks${sheet ? `?sheet=${sheet}` : ''}`,
   // Status report endpoint — live DB2 data for the Status Report tab
@@ -24,7 +26,7 @@ export const API_PATHS = {
 export const CURRENT_TASKS_REFRESH_MS = 60_000;
 
 // ── Sheet sources ─────────────────────────────────────────────────────────────
-export const SHEET_SOURCES = ['benefits', 'tax', 'status-report'];
+export const SHEET_SOURCES = ['status-report', 'benefits', 'tax'];
 
 export const SHEET_LABELS = {
   benefits:        'Benefits',
@@ -37,58 +39,19 @@ export const COLUMN_LABELS = {
   batchName:     'Batch Name',
   arguments:     'Arguments',
   scheduleName:  'Schedule Name / Job Group',
+  triggerNeeded: 'Trigger Needed',
   sheetSource:   'Sheet',
   logDir:        'Log Directory',
   scheduleValid: 'Schedule Valid',
-  // Filter panel labels
-  frequency:     'Frequency',
-  scheduleValid_filter: 'Schedule Validity',
 };
 
-/**
- * Frequency values that can be derived from schedule name tokens.
- * These match what scheduleParser returns for the `frequency` field.
- */
-export const SCHEDULE_FREQUENCY_OPTIONS = [
-  'daily',
-  'weekly',
-  'monthly',
-  'quarterly',
-  'annual',
-  'biweekly',
-  'on_demand',
-];
-
-/**
- * Derives the frequency bucket of a schedule name by inspecting its tokens.
- * This is a lightweight client-side approximation matching the server parser.
- * Returns one of SCHEDULE_FREQUENCY_OPTIONS or null if unrecognised.
- *
- * @param {string} scheduleName
- * @returns {string|null}
- */
-export function getScheduleFrequency(scheduleName) {
-  if (!scheduleName) return null;
-  const n = scheduleName.toLowerCase();
-  if (n.includes('xmatch_') || n.includes('eta_')) return 'quarterly';
-  if (n.includes('_annual_') || n.includes('annual_')) return 'annual';
-  if (n.includes('top_annual') || n.includes('reports_annual')) return 'annual';
-  if (n.includes('_qtrly_') || n.includes('_peuc_qtrly') || n.includes('_eb_qtrly')) return 'quarterly';
-  if (n.includes('_biweekly_')) return 'biweekly';
-  if (n.includes('_monthly_') || n.includes('_eb_monthly') || n === 'monthly_1st_sunday' || n === 'monthly_1st_sunday') return 'monthly';
-  if (n.includes('_weekly_') || n.includes('_tue_sat_') || n.includes('_sat_') || n.startsWith('reports_sat') || n.includes('_saturday_')) return 'weekly';
-  if (n.includes('_daily_') || n.includes('email_daily') || n.includes('workflow_reports_')) return 'daily';
-  if (n.startsWith('appeals_reports_')) return 'daily';
-  if (n.includes('corr_webservice_twice_daily')) return 'daily';
-  return 'on_demand';
-}
-
-// ── Table: sortable column definitions (updated for new schema) ───────────────
+// ── Table: sortable column definitions ───────────────────────────────────────
+// 'sheetSource' column removed — tab already indicates which sheet is active.
 export const SORTABLE_COLUMNS = [
-  { id: 'batchName',    label: 'Batch Name' },
-  { id: 'scheduleName', label: 'Schedule Name / Job Group' },
-  { id: 'arguments',    label: 'Arguments' },
-  { id: 'sheetSource',  label: 'Sheet' },
+  { id: 'batchName',     label: 'Batch Name' },
+  { id: 'scheduleName',  label: 'Schedule Name / Job Group' },
+  { id: 'arguments',     label: 'Arguments' },
+  { id: 'triggerNeeded', label: 'Trigger Needed' },
 ];
 
 // ── Complete approved schedule name list (mirrors server/config/constants.js) ─
@@ -247,3 +210,48 @@ export function buildCommand(batch, action) {
   }
   return `${batch.logDir}\n${parts.join(' ')}`;
 }
+
+/**
+ * Builds only the qclient.sh invocation line (without the cd prefix).
+ * Used when the cd command is displayed separately as Option 1.
+ *
+ * @param {Object} batch
+ * @param {'runJobOnly'|'resumeJob'} action
+ * @returns {string}
+ */
+export function buildQclientLine(batch, action) {
+  const parts = ['sudo', './qclient.sh', action, batch.batchName, batch.scheduleName];
+  if (batch.arguments && batch.arguments.trim()) {
+    parts.push(`"${batch.arguments.trim()}"`);
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Log path definitions per domain.
+ * <batchName> is substituted at render time.
+ *
+ * Structure: { benefits: [{ label, path }], tax: [{ label, path }] }
+ */
+export const LOG_PATH_DEFS = {
+  benefits: [
+    {
+      label: 'Benefits logs',
+      path:  (batchName) => `/opt/app/accessms/bin/benefits/batch/logs/${batchName}`,
+    },
+    {
+      label: 'Benefits logs archive',
+      path:  (batchName) => `/opt/logs/Batch/archive/benefits/logs/${batchName}`,
+    },
+  ],
+  tax: [
+    {
+      label: 'Tax logs',
+      path:  (batchName) => `/opt/app/accessms/bin/tax/batch/logs/${batchName}`,
+    },
+    {
+      label: 'Tax logs archive',
+      path:  (batchName) => `/opt/logs/Batch/archive/tax/logs/${batchName}`,
+    },
+  ],
+};
