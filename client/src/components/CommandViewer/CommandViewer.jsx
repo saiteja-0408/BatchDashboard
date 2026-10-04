@@ -14,7 +14,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import {
-  Tooltip, IconButton, Stack, Alert, Divider, Box, Typography,
+  Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
 } from '@mui/material';
 import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
 import CheckIcon        from '@mui/icons-material/Check';
@@ -100,14 +100,25 @@ CommandBlock.propTypes = {
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
-function Section({ children }) {
+function Section({ title, children }) {
   return (
-    <Stack spacing={1}>
-      {children}
-    </Stack>
+    <Box>
+      <Typography
+        variant="caption"
+        fontWeight={700}
+        color="text.secondary"
+        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', mb: 0.75 }}
+      >
+        {title}
+      </Typography>
+      <Stack spacing={1}>
+        {children}
+      </Stack>
+    </Box>
   );
 }
 Section.propTypes = {
+  title:    PropTypes.string.isRequired,
   children: PropTypes.node.isRequired,
 };
 
@@ -144,7 +155,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
       )}
 
       {/* ── Change Directory ── */}
-      <Section>
+      <Section title="Change Directory">
         <CommandBlock
           label="cd"
           value={batch.logDir}
@@ -152,7 +163,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
       </Section>
 
       {/* ── Run Command ── */}
-      <Section>
+      <Section title="Run Command">
         <CommandBlock
           label="Run"
           value={buildQclientLine(batch, 'runJobOnly')}
@@ -160,7 +171,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
       </Section>
 
       {/* ── Resume Command ── */}
-      <Section>
+      <Section title="Resume Command">
         <CommandBlock
           label="Resume"
           value={buildQclientLine(batch, 'resumeJob')}
@@ -168,7 +179,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
       </Section>
 
       {/* ── Log Paths ── */}
-      <Section>
+      <Section title="Log Paths">
         {logDefs.map(({ label, path }) => (
           <CommandBlock
             key={label}
