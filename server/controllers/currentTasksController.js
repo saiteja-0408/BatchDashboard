@@ -22,8 +22,9 @@ const { parseSchedule } = require('../utils/scheduleParser');
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
  */
-function getCurrentTasks(req, res) {
+async function getCurrentTasks(req, res) {
   const sheet  = (req.query.sheet || 'tax').toLowerCase();
+  await excelService.syncFromDisk(sheet);
   const batches = excelService.getAll(sheet);
   const now     = new Date(); // capture once — consistent timestamp across all rows
 

@@ -4,14 +4,14 @@
   "description": "Centralized batch job monitoring dashboard — replaces Excel-based manual tracking",
   "main": "server/app.js",
   "scripts": {
-    "start": "node server/app.js",
-    "dev:server": "nodemon --watch .env --watch server server/app.js",
-    "dev:client": "cd client && npm run dev",
+    "start": "cross-env NODE_ENV=production node server/app.js",
+    "dev:server": "cross-env nodemon --watch .env --watch server server/app.js",
+    "dev:client": "npm --prefix client run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "build:client": "cd client && npm run build",
+    "build:client": "npm --prefix client run build",
     "generate-sample": "node scripts/generateTestData.js",
-    "install:all": "npm install && cd client && npm install",
-    "test": "jest tests/"
+    "install:all": "npm install && npm --prefix client install",
+    "test": "cross-env NODE_ENV=test jest tests/"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
     "jest": "^30.5.2",
     "nodemon": "^3.1.4",
     "supertest": "^7.3.0"

@@ -50,24 +50,28 @@ app.use(errorHandler);
 
 // ── Bootstrap: read both Excel files before accepting requests ────────────────
 async function bootstrap() {
-  const dataDir      = path.resolve(process.env.DATA_DIR || './data');
-  const benefitsPath = path.join(dataDir, 'benefits.xlsx');
-  const taxPath      = path.join(dataDir, 'tax.xlsx');
+  const dataDir = path.resolve(process.env.DATA_DIR || './data');
+  const benefitsPath = process.env.BENEFITS_EXCEL_PATH
+    ? path.resolve(process.env.BENEFITS_EXCEL_PATH)
+    : path.join(dataDir, 'benefits.xlsx');
+  const taxPath = process.env.TAX_EXCEL_PATH
+    ? path.resolve(process.env.TAX_EXCEL_PATH)
+    : path.join(dataDir, 'tax.xlsx');
 
   const missingFiles = [
-    { label: 'benefits.xlsx', absPath: benefitsPath },
-    { label: 'tax.xlsx',      absPath: taxPath },
+    { label: 'benefits workbook', absPath: benefitsPath },
+    { label: 'tax workbook',      absPath: taxPath },
   ].filter(({ absPath }) => !fs.existsSync(absPath));
 
   if (missingFiles.length > 0) {
-    missingFiles.forEach(({ label }) =>
-      console.warn(`[startup] WARNING: ${label} not found in ${dataDir}`)
+    missingFiles.forEach(({ label, absPath }) =>
+      console.warn(`[startup] WARNING: ${label} not found at ${absPath}`)
     );
   }
 
   try {
     const { count } = await excelService.loadFromFiles(benefitsPath, taxPath);
-    console.log(`[startup] Loaded ${count} batch(es) from benefits.xlsx + tax.xlsx`);
+    console.log(`[startup] Loaded ${count} batch(es) from benefits & tax files`);
   } catch (err) {
     console.error(`[startup] Failed to load Excel files: ${err.message}`);
     console.warn('[startup] Server starting with empty batch store.');

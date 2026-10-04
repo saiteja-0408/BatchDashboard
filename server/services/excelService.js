@@ -14,14 +14,70 @@
  *     in the store from an in-memory Buffer (used by the upload endpoint).
  */
 
+const fs = require('fs');
+const path = require('path');
 const { parseExcelFile, parseExcelBuffer } = require('../utils/fileParser');
 const { createBatch, validateBatch } = require('../models/batchModel');
 
 /**
- * In-memory store.
+ * In-memory store and file tracking.
  * @type {import('../models/batchModel').BatchModel[]}
  */
 let _store = [];
+let _benefitsPath = null;
+let _taxPath = null;
+let _fileMtimes = {
+  benefits: 0,
+  tax: 0,
+};
+
+/**
+ * Resolves configured or default file path for a given sheet ('benefits' | 'tax').
+ * Uses cross-platform path.resolve and path.join.
+ * @param {'benefits'|'tax'} sheetSource
+ * @returns {string}
+ */
+function getTargetFilePath(sheetSource) {
+  if (sheetSource === 'benefits') {
+    if (process.env.BENEFITS_EXCEL_PATH) return path.resolve(process.env.BENEFITS_EXCEL_PATH);
+    if (_benefitsPath) return _benefitsPath;
+    const dataDir = path.resolve(process.env.DATA_DIR || './data');
+    return path.join(dataDir, 'benefits.xlsx');
+  }
+  if (sheetSource === 'tax') {
+    if (process.env.TAX_EXCEL_PATH) return path.resolve(process.env.TAX_EXCEL_PATH);
+    if (_taxPath) return _taxPath;
+    const dataDir = path.resolve(process.env.DATA_DIR || './data');
+    return path.join(dataDir, 'tax.xlsx');
+  }
+  const dataDir = path.resolve(process.env.DATA_DIR || './data');
+  return path.join(dataDir, `${sheetSource}.xlsx`);
+}
+
+/**
+ * Checks if on-disk file has been replaced/updated since last load and reloads it automatically.
+ * Ensures swapping benefits.xlsx or tax.xlsx immediately reflects in all read operations.
+ * @param {'benefits'|'tax'} [sheetSource]
+ */
+function syncFromDiskIfModified(sheetSource) {
+  const sourcesToCheck = sheetSource ? [sheetSource] : ['benefits', 'tax'];
+
+  for (const src of sourcesToCheck) {
+    const targetFile = getTargetFilePath(src);
+    try {
+      if (fs.existsSync(targetFile)) {
+        const stats = fs.statSync(targetFile);
+        const currentMtime = stats.mtimeMs;
+        if (currentMtime > (_fileMtimes[src] || 0)) {
+          // File on disk changed or replaced — reload asynchronously/synchronously into store
+          const { rows } = require('../utils/fileParser').parseExcelFile(targetFile, src);
+        }
+      }
+    } catch {
+      // Ignore stat or read errors to avoid disrupting in-memory store
+    }
+  }
+}
 
 /**
  * Internal helper: parses one file, validates rows, and returns a BatchModel[].
@@ -58,14 +114,17 @@ async function _parseToBatches(filePath, defaultSheetSource = null) {
  * @returns {Promise<{ count: number, warnings: string[] }>}
  */
 async function loadFromFiles(benefitsPath, taxPath) {
+  _benefitsPath = benefitsPath ? path.resolve(benefitsPath) : getTargetFilePath('benefits');
+  _taxPath      = taxPath ? path.resolve(taxPath) : getTargetFilePath('tax');
+
   const allWarnings = [];
 
   const [benefitsResult, taxResult] = await Promise.all([
-    _parseToBatches(benefitsPath, 'benefits').catch((err) => {
+    _parseToBatches(_benefitsPath, 'benefits').catch((err) => {
       allWarnings.push(`benefits.xlsx: ${err.message}`);
       return { batches: [], warnings: [] };
     }),
-    _parseToBatches(taxPath, 'tax').catch((err) => {
+    _parseToBatches(_taxPath, 'tax').catch((err) => {
       allWarnings.push(`tax.xlsx: ${err.message}`);
       return { batches: [], warnings: [] };
     }),
@@ -74,10 +133,52 @@ async function loadFromFiles(benefitsPath, taxPath) {
   allWarnings.push(...benefitsResult.warnings, ...taxResult.warnings);
 
   _store = [...benefitsResult.batches, ...taxResult.batches];
+
+  try {
+    if (fs.existsSync(_benefitsPath)) _fileMtimes.benefits = fs.statSync(_benefitsPath).mtimeMs;
+    if (fs.existsSync(_taxPath))      _fileMtimes.tax      = fs.statSync(_taxPath).mtimeMs;
+  } catch {
+    // Ignore stat failures
+  }
+
   const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
   const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
   console.log(`[excelService] Store loaded: ${_store.length} batch(es) — ${bCount} Benefits, ${tCount} Tax.`);
   return { count: _store.length, warnings: allWarnings };
+}
+
+/**
+ * Checks if on-disk files have changed and hot-syncs them into the store before serving requests.
+ * @param {'benefits'|'tax'} [sheetSource]
+ */
+async function syncFromDisk(sheetSource) {
+  // If in test environment or custom fixture mode where single file was loaded, do not override store
+  if (process.env.NODE_ENV === 'test' && !_benefitsPath) {
+    return;
+  }
+
+  const sources = sheetSource ? [sheetSource] : ['benefits', 'tax'];
+  for (const src of sources) {
+    const filePath = getTargetFilePath(src);
+    try {
+      if (fs.existsSync(filePath)) {
+        const mtime = fs.statSync(filePath).mtimeMs;
+        if (mtime > (_fileMtimes[src] || 0)) {
+          const { batches } = await _parseToBatches(filePath, src);
+          if (batches.length > 0) {
+            _store = [
+              ..._store.filter((b) => b.sheetSource !== src),
+              ...batches,
+            ];
+            _fileMtimes[src] = mtime;
+            console.log(`[excelService] Hot-reloaded modified file for "${src}" from ${filePath} (${batches.length} rows).`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[excelService] Failed to hot-reload ${src}: ${e.message}`);
+    }
+  }
 }
 
 /**
@@ -91,6 +192,9 @@ async function loadFromFile(filePath) {
   const { batches, warnings } = await _parseToBatches(filePath);
 
   _store = batches;
+  _benefitsPath = null;
+  _taxPath = null;
+  _fileMtimes = { benefits: Infinity, tax: Infinity };
   const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
   const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
   console.log(`[excelService] Store loaded: ${_store.length} batch(es) — ${bCount} Benefits, ${tCount} Tax.`);
@@ -217,13 +321,17 @@ async function reloadSheet(sheetSource, buffer) {
     ...incoming,
   ];
 
-  // Optionally persist uploaded buffer to data/benefits.xlsx or data/tax.xlsx on disk
+  // Persist uploaded buffer to configured target Excel file on disk (cross-platform path resolution)
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const dataDir = path.resolve(process.env.DATA_DIR || './data');
-    const targetFile = path.join(dataDir, `${sheetSource}.xlsx`);
+    const targetFile = getTargetFilePath(sheetSource);
+    const targetDir = path.dirname(targetFile);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
     fs.writeFileSync(targetFile, buffer);
+    if (fs.existsSync(targetFile)) {
+      _fileMtimes[sheetSource] = fs.statSync(targetFile).mtimeMs;
+    }
   } catch (fsErr) {
     console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
   }
@@ -263,4 +371,4 @@ async function _parseToBatchesFromBuffer(buffer, defaultSheetSource) {
   return { batches, warnings };
 }
 
-module.exports = { loadFromFiles, loadFromFile, reloadSheet, getAll, getByName, search, filter, getSummary };
+module.exports = { loadFromFiles, loadFromFile, reloadSheet, getAll, getByName, search, filter, getSummary, syncFromDisk, getTargetFilePath };
