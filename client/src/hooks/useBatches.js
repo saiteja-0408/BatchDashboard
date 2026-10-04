@@ -10,7 +10,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
   fetchAllBatches,
   fetchSummary,
-  searchBatches,
   fetchBatchByName,
   fetchCurrentTasks,
 } from '../services/apiService';
@@ -52,20 +51,6 @@ export function useSummary() {
     queryKey:  ['batches', 'summary'],
     queryFn:   fetchSummary,
     staleTime: STALE_TIME,
-  });
-}
-
-/**
- * Searches batches when query is non-empty.
- * @param {string} query
- * @param {string} sheet
- */
-export function useSearchBatches(query, sheet) {
-  return useQuery({
-    queryKey:  ['batches', 'search', query, sheet],
-    queryFn:   () => (query ? searchBatches(query, sheet) : fetchAllBatches(sheet)),
-    staleTime: STALE_TIME,
-    enabled:   true,
   });
 }
 

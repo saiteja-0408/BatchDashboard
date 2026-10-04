@@ -7,8 +7,7 @@ import { TextField, InputAdornment, IconButton } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import { useBatchContext } from '../../context/BatchContext';
-
-const DEBOUNCE_MS = 350;
+import { DEBOUNCE_MS } from '../../utils/constants';
 
 export function SearchBar() {
   const { searchQuery, setSearchQuery } = useBatchContext();

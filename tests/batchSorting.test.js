@@ -27,21 +27,27 @@ function compareValues(a, b, order = 'asc') {
   return order === 'asc' ? comp : -comp;
 }
 
+/**
+ * Mirrors the three-state cycle in useSort.js / StatusReportTab nextSortConfig:
+ *   none → asc → desc → none (reset)
+ */
 function requestSort(currentConfig, key) {
   if (!currentConfig || currentConfig.key !== key) return { key, direction: 'asc' };
   if (currentConfig.direction === 'asc') return { key, direction: 'desc' };
-  return { key, direction: 'asc' };
+  // desc → reset
+  return null;
 }
 
 function requestScopedSort(configs, scope, key) {
-  const current = configs[scope];
+  const current = configs[scope] ?? null;
   if (!current || current.key !== key) {
     return { ...configs, [scope]: { key, direction: 'asc' } };
   }
   if (current.direction === 'asc') {
     return { ...configs, [scope]: { key, direction: 'desc' } };
   }
-  return { ...configs, [scope]: { key, direction: 'asc' } };
+  // desc → reset
+  return { ...configs, [scope]: null };
 }
 
 describe('compareValues helper', () => {
@@ -114,7 +120,7 @@ describe('compareValues helper', () => {
   });
 
   describe('requestSort state transitions', () => {
-    test('cycles ascending → descending → ascending on same column', () => {
+    test('cycles ascending → descending → null (reset) on same column', () => {
       let sort = null;
       sort = requestSort(sort, 'batchName');
       expect(sort).toEqual({ key: 'batchName', direction: 'asc' });
@@ -122,6 +128,11 @@ describe('compareValues helper', () => {
       sort = requestSort(sort, 'batchName');
       expect(sort).toEqual({ key: 'batchName', direction: 'desc' });
 
+      // Third click on the same column resets sort to null
+      sort = requestSort(sort, 'batchName');
+      expect(sort).toBeNull();
+
+      // Fourth click starts the cycle again at asc
       sort = requestSort(sort, 'batchName');
       expect(sort).toEqual({ key: 'batchName', direction: 'asc' });
     });
@@ -143,8 +154,9 @@ describe('compareValues helper', () => {
       expect(configs.benefits).toEqual({ key: 'batchName', direction: 'desc' });
       expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
 
+      // Third click resets benefits tab sort to null
       configs = requestScopedSort(configs, 'benefits', 'batchName');
-      expect(configs.benefits).toEqual({ key: 'batchName', direction: 'asc' });
+      expect(configs.benefits).toBeNull();
       expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
     });
   });

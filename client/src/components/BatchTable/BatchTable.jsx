@@ -235,6 +235,48 @@ export function BatchTable({ batches, isLoading, isError }) {
     );
   }, [currentTasksEnvelope]);
 
+  // ── Desktop virtualization state — must be declared before any early returns ──
+  // React Rules of Hooks: hooks cannot be called conditionally or after returns.
+  const containerRef = useRef(null);
+  const [tableHeight, setTableHeight] = useState(500);
+  const [scrollTop, setScrollTop]     = useState(0);
+
+  useEffect(() => {
+    /** Recalculates the container height to fill the visible viewport area. */
+    const updateHeight = () => {
+      const windowH = window.innerHeight;
+      const targetH = Math.max(300, Math.min(windowH - 320, 680));
+      setTableHeight(targetH);
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
+
+  const handleScroll = useCallback((e) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  // Virtualised window — only mount rows inside (or near) the visible viewport.
+  const totalCount = sortedData.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
+  const endIndex   = Math.min(
+    totalCount,
+    Math.ceil((scrollTop + tableHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
+  );
+  const paddingTop    = startIndex * VIRTUAL_ROW_HEIGHT;
+  const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
+
+  // Number of columns rendered — used for colSpan on virtual spacer rows so it
+  // always matches the actual column count rather than a hardcoded magic number.
+  const columnCount = SORTABLE_COLUMNS.length + (SHOW_CURRENT_TASK ? 1 : 0);
+
+  const visibleBatches = useMemo(
+    () => sortedData.slice(startIndex, endIndex),
+    [sortedData, startIndex, endIndex]
+  );
+
+  // ── Early returns (after all hooks) ──────────────────────────────────────
   if (isError) {
     return (
       <Box p={4} textAlign="center">
@@ -272,42 +314,7 @@ export function BatchTable({ batches, isLoading, isError }) {
     );
   }
 
-  // ── Desktop table layout with Row Virtualization ──────────────────────────
-  const containerRef = useRef(null);
-  const [tableHeight, setTableHeight] = useState(500);
-
-  useEffect(() => {
-    const updateHeight = () => {
-      // Calculate responsive viewport height available for the list
-      const windowH = window.innerHeight;
-      const targetH = Math.max(300, Math.min(windowH - 320, 680));
-      setTableHeight(targetH);
-    };
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
-  }, []);
-
-  const [scrollTop, setScrollTop] = useState(0);
-
-  const handleScroll = useCallback((e) => {
-    setScrollTop(e.currentTarget.scrollTop);
-  }, []);
-
-  const totalCount = sortedData.length;
-  const startIndex = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
-  const endIndex = Math.min(
-    totalCount,
-    Math.ceil((scrollTop + tableHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
-  );
-
-  const paddingTop = startIndex * VIRTUAL_ROW_HEIGHT;
-  const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
-
-  const visibleBatches = useMemo(() => {
-    return sortedData.slice(startIndex, endIndex);
-  }, [sortedData, startIndex, endIndex]);
-
+  // ── Desktop table layout with row virtualization ──────────────────────────
   return (
     <TableContainer
       component={Paper}
@@ -372,9 +379,10 @@ export function BatchTable({ batches, isLoading, isError }) {
             <SkeletonRows />
           ) : (
             <>
+              {/* Top virtual spacer — preserves scroll position for rows above viewport */}
               {paddingTop > 0 && (
                 <TableRow sx={{ height: `${paddingTop}px !important`, border: 0 }}>
-                  <TableCell colSpan={4} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
+                  <TableCell colSpan={columnCount} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
                 </TableRow>
               )}
               {visibleBatches.map((batch) => (
@@ -386,9 +394,10 @@ export function BatchTable({ batches, isLoading, isError }) {
                   onClick={openBatchModal}
                 />
               ))}
+              {/* Bottom virtual spacer — maintains scrollbar thumb size for rows below viewport */}
               {paddingBottom > 0 && (
                 <TableRow sx={{ height: `${paddingBottom}px !important`, border: 0 }}>
-                  <TableCell colSpan={4} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
+                  <TableCell colSpan={columnCount} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
                 </TableRow>
               )}
             </>

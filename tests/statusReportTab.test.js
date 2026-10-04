@@ -255,6 +255,97 @@ describe('StatusReportTab unit tests', () => {
     });
   });
 
+  describe('compareRowsByColumn — StatusReportTab multi-column sorting', () => {
+    // Inline the compareValues and compareRowsByColumn logic mirroring the refactored StatusReportTab
+
+    function compareValues(a, b, order = 'asc') {
+      if ((a === null || a === undefined || a === '') && (b === null || b === undefined || b === '')) return 0;
+      if (a === null || a === undefined || a === '') return order === 'asc' ? 1 : -1;
+      if (b === null || b === undefined || b === '') return order === 'asc' ? -1 : 1;
+      const numA = typeof a === 'number' ? a : (typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a)) ? Number(a) : NaN);
+      const numB = typeof b === 'number' ? b : (typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b)) ? Number(b) : NaN);
+      if (!isNaN(numA) && !isNaN(numB)) return order === 'asc' ? numA - numB : numB - numA;
+      const sa = String(a);
+      const sb = String(b);
+      const comp = sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
+      return order === 'asc' ? comp : -comp;
+    }
+
+    function compareRowsByColumn(a, b, colId, direction) {
+      if (colId === '_status') {
+        const statusA = getRowStatus(a);
+        const statusB = getRowStatus(b);
+        const bizA = statusA === 'Biz Error' ? 0 : 1;
+        const bizB = statusB === 'Biz Error' ? 0 : 1;
+        if (bizA !== bizB) return direction === 'asc' ? bizA - bizB : bizB - bizA;
+        return compareValues(statusA, statusB, direction);
+      }
+      if (colId === 'start_time' || colId === 'end_time' || colId === 'next_fire_time') {
+        const msA = parseDateValue(a[colId]) ? parseDateValue(a[colId]).getTime() : null;
+        const msB = parseDateValue(b[colId]) ? parseDateValue(b[colId]).getTime() : null;
+        return compareValues(msA, msB, direction);
+      }
+      return compareValues(a[colId], b[colId], direction);
+    }
+
+    function nextSortConfig(current, colId) {
+      if (!current || current.key !== colId) return { key: colId, direction: 'asc' };
+      if (current.direction === 'asc') return { key: colId, direction: 'desc' };
+      return null;
+    }
+
+    const rows = [
+      { job_name: 'ZapBatch',  job_group: 'alpha', start_time: '2026-10-03 10:00:00.000000', biz_error_flag: 'N', error_flag: 'N' },
+      { job_name: 'AlphaBatch', job_group: 'zeta',  start_time: '2026-10-03 08:00:00.000000', biz_error_flag: 'Y', error_flag: 'N' },
+      { job_name: 'MidBatch',  job_group: 'beta',  start_time: '2026-10-03 09:00:00.000000', biz_error_flag: 'N', error_flag: 'Y' },
+    ];
+
+    test('sorts job_name column asc/desc by locale-aware string comparison', () => {
+      const asc  = [...rows].sort((a, b) => compareRowsByColumn(a, b, 'job_name', 'asc'));
+      const desc = [...rows].sort((a, b) => compareRowsByColumn(a, b, 'job_name', 'desc'));
+      expect(asc.map(r => r.job_name)).toEqual(['AlphaBatch', 'MidBatch', 'ZapBatch']);
+      expect(desc.map(r => r.job_name)).toEqual(['ZapBatch', 'MidBatch', 'AlphaBatch']);
+    });
+
+    test('sorts start_time column chronologically (Date comparison)', () => {
+      const asc  = [...rows].sort((a, b) => compareRowsByColumn(a, b, 'start_time', 'asc'));
+      const desc = [...rows].sort((a, b) => compareRowsByColumn(a, b, 'start_time', 'desc'));
+      expect(asc.map(r => r.job_name)).toEqual(['AlphaBatch', 'MidBatch', 'ZapBatch']);
+      expect(desc.map(r => r.job_name)).toEqual(['ZapBatch', 'MidBatch', 'AlphaBatch']);
+    });
+
+    test('_status asc places Biz Error rows first', () => {
+      const asc = [...rows].sort((a, b) => compareRowsByColumn(a, b, '_status', 'asc'));
+      // AlphaBatch has biz_error_flag=Y → getRowStatus = 'Biz Error' → first
+      expect(asc[0].job_name).toBe('AlphaBatch');
+    });
+
+    test('_status desc places Biz Error rows last', () => {
+      const desc = [...rows].sort((a, b) => compareRowsByColumn(a, b, '_status', 'desc'));
+      expect(desc[desc.length - 1].job_name).toBe('AlphaBatch');
+    });
+
+    test('nextSortConfig cycles none → asc → desc → none', () => {
+      let config = null;
+      config = nextSortConfig(config, 'job_name');
+      expect(config).toEqual({ key: 'job_name', direction: 'asc' });
+
+      config = nextSortConfig(config, 'job_name');
+      expect(config).toEqual({ key: 'job_name', direction: 'desc' });
+
+      config = nextSortConfig(config, 'job_name');
+      expect(config).toBeNull();
+    });
+
+    test('sorting never mutates original array', () => {
+      const original = [...rows];
+      const sorted = [...rows].sort((a, b) => compareRowsByColumn(a, b, 'job_name', 'asc'));
+      // Original reference should be unchanged
+      expect(rows).toEqual(original);
+      expect(sorted).not.toEqual(rows);
+    });
+  });
+
   describe('sortStatusRows — Biz Error priority & stable sort', () => {
     const mockRows = [
       { id: 1, job_name: 'JobA', biz_error_flag: 'N' },

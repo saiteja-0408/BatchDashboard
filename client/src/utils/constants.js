@@ -3,6 +3,10 @@
  * Never hardcode strings in components — import from here.
  */
 
+// ── UI timing constants ───────────────────────────────────────────────────────
+/** Debounce delay (ms) applied to text-based filter/search inputs. */
+export const DEBOUNCE_MS = 350;
+
 // ── API base — Vite proxies /api to backend in dev ──────────────────────────
 export const API_BASE = '/api';
 

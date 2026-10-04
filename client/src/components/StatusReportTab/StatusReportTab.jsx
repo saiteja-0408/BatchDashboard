@@ -4,13 +4,25 @@
  * Fully responsive — see layout comments inline.
  *
  * Search:
- *   Local useState + 350ms debounce (same pattern as SearchBar.jsx).
- *   Filters rows client-side against job_name, job_group, biz_error_flag,
- *   error_flag, killed_flag, parent_job_name, parent_job_group — case-insensitive
+ *   Imports DEBOUNCE_MS from constants (350ms) — same value as SearchBar.jsx.
+ *   Filters rows client-side against all visible columns — case-insensitive
  *   partial match. Search resets when the tab is re-entered (enabled: false → true).
+ *
+ * Sorting:
+ *   Every column header is clickable: asc → desc → reset (no sort).
+ *   The _status column uses the Biz-Error-first sort from sortStatusRows.
+ *   All other columns use the generic compareValues comparator which handles
+ *   strings (locale-aware, case-insensitive), numbers, and Date objects.
+ *   Sorting never mutates the original data array — always operates on a copy.
+ *
+ * Virtualization:
+ *   Custom row-virtualization (same approach as BatchTable) renders only the
+ *   rows inside the visible viewport ± OVERSCAN rows. DOM nodes are capped at
+ *   ~15–20 rows regardless of dataset size, eliminating scroll stutter for
+ *   datasets up to 900+ rows.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box, Typography, Alert, Chip,
@@ -21,32 +33,37 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon  from '@mui/icons-material/Clear';
 import { useStatusReport } from '../../hooks/useStatusReport';
-import { getRowStatus, sortStatusRows } from '../../utils/helpers';
+import { getRowStatus, sortStatusRows, compareValues } from '../../utils/helpers';
+import { DEBOUNCE_MS } from '../../utils/constants';
 
-/** Debounce delay — matches SearchBar.jsx */
-const DEBOUNCE_MS = 350;
+// ── Virtualization constants ──────────────────────────────────────────────────
+/** Fixed row height in px — must match the actual rendered row height. */
+const VIRTUAL_ROW_HEIGHT = 38;
+/** Extra rows to render above and below the visible window. */
+const OVERSCAN_COUNT = 5;
 
 /**
  * Column definitions.
- * minWidth keeps the table usable on 1280px.
- * flex (0–1) is a relative weight hint used below to assign proportional widths
- * on large screens where the table has extra horizontal space.
+ * minWidth keeps the table usable at 1280px.
+ * sortable: false prevents click handlers on non-data columns.
  */
 const COLUMNS = [
-  { id: 'job_name',         label: 'Job Name',     minWidth: 160, flex: 2   },
-  { id: 'job_group',        label: 'Job Group',    minWidth: 140, flex: 1.5 },
-  { id: 'start_time',       label: 'Start Time',   minWidth: 140, flex: 1.2 },
-  { id: 'end_time',         label: 'End Time',     minWidth: 140, flex: 1.2 },
-  { id: 'next_fire_time',   label: 'Next Fire',    minWidth: 140, flex: 1.2 },
-  { id: 'biz_error_flag',   label: 'Biz Err',      minWidth: 50,  flex: 0.5 },
-  { id: 'error_flag',       label: 'Err',          minWidth: 40,  flex: 0.5 },
-  { id: 'killed_flag',      label: 'Killed',       minWidth: 50,  flex: 0.5 },
-  { id: 'parent_job_name',  label: 'Parent Job',   minWidth: 140, flex: 1.5 },
-  { id: 'parent_job_group', label: 'Parent Group', minWidth: 110, flex: 1   },
-  { id: '_status',          label: 'Status',       minWidth: 130, flex: 1   },
+  { id: 'job_name',         label: 'Job Name',     minWidth: 160, sortable: true  },
+  { id: 'job_group',        label: 'Job Group',    minWidth: 140, sortable: true  },
+  { id: 'start_time',       label: 'Start Time',   minWidth: 140, sortable: true  },
+  { id: 'end_time',         label: 'End Time',     minWidth: 140, sortable: true  },
+  { id: 'next_fire_time',   label: 'Next Fire',    minWidth: 140, sortable: true  },
+  { id: 'biz_error_flag',   label: 'Biz Err',      minWidth: 50,  sortable: true  },
+  { id: 'error_flag',       label: 'Err',          minWidth: 40,  sortable: true  },
+  { id: 'killed_flag',      label: 'Killed',       minWidth: 50,  sortable: true  },
+  { id: 'parent_job_name',  label: 'Parent Job',   minWidth: 140, sortable: true  },
+  { id: 'parent_job_group', label: 'Parent Group', minWidth: 110, sortable: true  },
+  { id: '_status',          label: 'Status',       minWidth: 130, sortable: true  },
 ];
 
-/** Status chip derived from biz_error_flag / row status */
+// ── StatusChip ────────────────────────────────────────────────────────────────
+
+/** Status chip derived from biz_error_flag / row status. */
 function StatusChip({ row }) {
   const statusStr = getRowStatus(row);
   if (statusStr === 'Biz Error') {
@@ -71,7 +88,9 @@ function StatusChip({ row }) {
 }
 StatusChip.propTypes = { row: PropTypes.object.isRequired };
 
-/** Skeleton rows while loading */
+// ── SkeletonRows ──────────────────────────────────────────────────────────────
+
+/** Skeleton rows while loading. */
 function SkeletonRows({ rows = 5 }) {
   return Array.from({ length: rows }).map((_, i) => (
     <TableRow key={i}>
@@ -81,13 +100,16 @@ function SkeletonRows({ rows = 5 }) {
     </TableRow>
   ));
 }
+SkeletonRows.propTypes = { rows: PropTypes.number };
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
 
 /**
- * Helper to parse any timestamp / date representation (ISO-8601, DB2 string, Unix timestamp, Date).
- * DB2 formats: "2026-10-03 21:30:00.846000" or "2026-10-03-21.30.00.846000"
- * ISO formats: "2026-10-03T21:30:00.846Z"
- * Unix timestamps: number or numeric string
- * @param {*} v
+ * Parses any timestamp/date representation into a Date object.
+ * Handles: ISO-8601, DB2 format ("YYYY-MM-DD HH:mm:ss.ffffff"),
+ * Unix timestamps (10-digit seconds, 13-digit ms), and Date instances.
+ *
+ * @param {string|number|Date|null|undefined} v
  * @returns {Date|null}
  */
 export function parseDateValue(v) {
@@ -100,14 +122,17 @@ export function parseDateValue(v) {
   if (typeof v === 'string') {
     const s = v.trim();
     if (!s) return null;
-    // Check if numeric timestamp
+    // Unix timestamp (10 = seconds, 13 = milliseconds)
     if (/^\d{10,13}$/.test(s)) {
       const num = Number(s);
       const d = new Date(s.length === 10 ? num * 1000 : num);
       return isNaN(d.getTime()) ? null : d;
     }
-    // Normalize DB2 timestamp format "YYYY-MM-DD-HH.mm.ss.ffffff" -> "YYYY-MM-DDTHH:mm:ss"
-    const db2Normalized = s.replace(/^(\d{4}-\d{2}-\d{2})[- ](\d{2})[.:](\d{2})[.:](\d{2})(?:\.(\d+))?/, '$1T$2:$3:$4.$5');
+    // Normalise DB2 timestamp "YYYY-MM-DD HH:mm:ss.ffffff" → ISO format
+    const db2Normalized = s.replace(
+      /^(\d{4}-\d{2}-\d{2})[- ](\d{2})[.:](\d{2})[.:](\d{2})(?:\.(\d+))?/,
+      '$1T$2:$3:$4.$5'
+    );
     const d1 = new Date(db2Normalized);
     if (!isNaN(d1.getTime())) return d1;
 
@@ -119,43 +144,92 @@ export function parseDateValue(v) {
 }
 
 /**
- * Standardize timestamp display to "YYYY-MM-DD HH:mm:ss" (24h) with 2-digit zero-padding.
- * Also provides formatted string for date/time columns.
+ * Formats a Date as "YYYY-MM-DD HH:mm:ss" (zero-padded, 24-hour clock).
  * @param {Date} d
  * @returns {string}
  */
 export function formatStandardDateTime(d) {
   if (!d || isNaN(d.getTime())) return '';
   const pad = (n) => String(n).padStart(2, '0');
-  const year  = d.getFullYear();
-  const month = pad(d.getMonth() + 1);
-  const day   = pad(d.getDate());
-  const hours = pad(d.getHours());
-  const mins  = pad(d.getMinutes());
-  const secs  = pad(d.getSeconds());
-  return `${year}-${month}-${day} ${hours}:${mins}:${secs}`;
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
 }
 
 /**
  * Formats a cell value for display.
- * start_time, end_time, next_fire_time → Standardized Date & Time "YYYY-MM-DD HH:mm:ss".
+ * Date columns (start_time, end_time, next_fire_time) → "YYYY-MM-DD HH:mm:ss".
  * Null/empty → em dash.
  *
  * @param {*}      value  Raw cell value
- * @param {string} colId  Column id (e.g. 'start_time')
+ * @param {string} colId  Column id
+ * @returns {string}
  */
 export function formatCell(value, colId) {
   if (value === null || value === undefined || value === '') return '—';
 
   if (colId === 'start_time' || colId === 'end_time' || colId === 'next_fire_time') {
     const d = parseDateValue(value);
-    if (d) {
-      return formatStandardDateTime(d);
-    }
+    if (d) return formatStandardDateTime(d);
   }
 
   return String(value);
 }
+
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Compares two status-report rows for a given column.
+ * Date columns are compared chronologically as Date objects.
+ * The _status column uses Biz-Error-first ordering.
+ * All other columns delegate to the generic compareValues utility.
+ *
+ * @param {object} a
+ * @param {object} b
+ * @param {string} colId
+ * @param {'asc'|'desc'} direction
+ * @returns {number}
+ */
+function compareRowsByColumn(a, b, colId, direction) {
+  // _status column: Biz Errors sort before all other statuses
+  if (colId === '_status') {
+    const statusA = getRowStatus(a);
+    const statusB = getRowStatus(b);
+    const bizA = statusA === 'Biz Error' ? 0 : 1;
+    const bizB = statusB === 'Biz Error' ? 0 : 1;
+    if (bizA !== bizB) return direction === 'asc' ? bizA - bizB : bizB - bizA;
+    return compareValues(statusA, statusB, direction);
+  }
+
+  // Date columns: parse and compare as Date ms values
+  if (colId === 'start_time' || colId === 'end_time' || colId === 'next_fire_time') {
+    const dateA = parseDateValue(a[colId]);
+    const dateB = parseDateValue(b[colId]);
+    const msA = dateA ? dateA.getTime() : null;
+    const msB = dateB ? dateB.getTime() : null;
+    return compareValues(msA, msB, direction);
+  }
+
+  return compareValues(a[colId], b[colId], direction);
+}
+
+/**
+ * Cycles the sort direction for a column:
+ *   none → asc → desc → none
+ *
+ * @param {{ key: string, direction: 'asc'|'desc' } | null} current
+ * @param {string} colId
+ * @returns {{ key: string, direction: 'asc'|'desc' } | null}
+ */
+function nextSortConfig(current, colId) {
+  if (!current || current.key !== colId) return { key: colId, direction: 'asc' };
+  if (current.direction === 'asc')       return { key: colId, direction: 'desc' };
+  // desc → reset (no sort)
+  return null;
+}
+
+// ── StatusReportTab ───────────────────────────────────────────────────────────
 
 /** @param {{ enabled: boolean }} props */
 export function StatusReportTab({ enabled }) {
@@ -167,94 +241,131 @@ export function StatusReportTab({ enabled }) {
     error,
   } = useStatusReport(enabled);
 
-  // ── Local search state (same pattern as SearchBar.jsx) ────────────────────
-  const [searchInput, setSearchInput]   = useState('');
-  const [searchQuery, setSearchQuery]   = useState('');
-  // ── Status sort state: 'default' | 'biz_top' (2-state toggle: sorted <-> normal) ──
-  const [statusSortOrder, setStatusSortOrder] = useState('default');
+  // ── Local search state ────────────────────────────────────────────────────
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleStatusHeaderClick = () => {
-    setStatusSortOrder((prev) => (prev === 'default' ? 'biz_top' : 'default'));
-  };
+  // ── Sort state: { key: string, direction: 'asc'|'desc' } | null ──────────
+  const [sortConfig, setSortConfig] = useState(null);
 
-  // Debounce: push to searchQuery 350ms after the user stops typing
+  // Debounce: push to searchQuery after user stops typing
   useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchInput), DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
   // Reset search and sort when the tab is re-entered (enabled transitions false → true)
-  // This matches the BatchContext clearSearch() called by SheetTabs on tab switch.
-  const prevEnabled = React.useRef(enabled);
+  const prevEnabled = useRef(enabled);
   useEffect(() => {
     if (!prevEnabled.current && enabled) {
       setSearchInput('');
       setSearchQuery('');
-      setStatusSortOrder('default');
+      setSortConfig(null);
     }
     prevEnabled.current = enabled;
   }, [enabled]);
 
+  // ── Virtualization state — declared before any early returns ─────────────
+  const containerRef  = useRef(null);
+  const [tableHeight, setTableHeight] = useState(500);
+  const [scrollTop,   setScrollTop]   = useState(0);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      const windowH = window.innerHeight;
+      setTableHeight(Math.max(300, Math.min(windowH - 320, 700)));
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
+
+  const handleScroll = useCallback((e) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  // ── Sort column header click ──────────────────────────────────────────────
+  const handleSortClick = useCallback((colId) => {
+    setSortConfig((prev) => nextSortConfig(prev, colId));
+    // Reset scroll to top so the user sees the sorted result from the beginning
+    setScrollTop(0);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+  }, []);
+
   const allRows = envelope?.data ?? [];
 
-  // ── Client-side filter & sort (Global multi-column search) ─────────────────
+  // ── Client-side filter ────────────────────────────────────────────────────
   const filteredRows = useMemo(() => {
-    let list = allRows;
     const rawQuery = searchQuery.trim();
-    if (rawQuery) {
-      const q = rawQuery.toLowerCase();
-      list = allRows.filter((row) => {
-        if (!row || typeof row !== 'object') return false;
+    if (!rawQuery) return allRows;
 
-        // 1. Check all direct properties/columns on the row
-        for (const [key, val] of Object.entries(row)) {
-          if (val === null || val === undefined) continue;
+    const q = rawQuery.toLowerCase();
+    return allRows.filter((row) => {
+      if (!row || typeof row !== 'object') return false;
 
-          // Check raw value string
-          const rawStr = String(val).toLowerCase();
-          if (rawStr.includes(q)) return true;
+      // 1. Match against every raw column value
+      for (const [key, val] of Object.entries(row)) {
+        if (val === null || val === undefined) continue;
 
-          // If date/timestamp property, also test standardized formatted display
-          if (key.includes('time') || key.includes('date') || val instanceof Date) {
-            const d = parseDateValue(val);
-            if (d) {
-              const formatted = formatStandardDateTime(d).toLowerCase();
-              if (formatted.includes(q)) return true;
-              const localeStr = d.toLocaleString().toLowerCase();
-              if (localeStr.includes(q)) return true;
-            }
+        if (String(val).toLowerCase().includes(q)) return true;
+
+        // For date/time columns also test the formatted display string
+        if (key.includes('time') || key.includes('date') || val instanceof Date) {
+          const d = parseDateValue(val);
+          if (d) {
+            if (formatStandardDateTime(d).toLowerCase().includes(q)) return true;
+            if (d.toLocaleString().toLowerCase().includes(q)) return true;
           }
         }
+      }
 
-        // 2. Check derived Status badge string ("Biz Error", "OK", etc.)
-        const statusStr = getRowStatus(row);
-        if (statusStr && statusStr.toLowerCase().includes(q)) {
-          return true;
-        }
+      // 2. Match against the derived Status label ("Biz Error", "OK", etc.)
+      const statusStr = getRowStatus(row);
+      if (statusStr && statusStr.toLowerCase().includes(q)) return true;
 
-        // 3. Check for specific Biz Error semantic synonyms
-        if (
-          q === 'biz error' ||
-          q === 'biz' ||
-          q === 'business error' ||
-          q === 'error'
-        ) {
-          if (statusStr === 'Biz Error') return true;
-        }
+      // 3. Semantic Biz Error synonyms
+      if (
+        (q === 'biz error' || q === 'biz' || q === 'business error' || q === 'error') &&
+        statusStr === 'Biz Error'
+      ) {
+        return true;
+      }
 
-        return false;
-      });
-    }
-    return sortStatusRows(list, statusSortOrder);
-  }, [allRows, searchQuery, statusSortOrder]);
+      return false;
+    });
+  }, [allRows, searchQuery]);
 
-  const showTable  = (isFetching || allRows.length > 0) && !isIdle;
-  const noResults  = !isFetching && searchQuery.trim() && filteredRows.length === 0 && allRows.length > 0;
+  // ── Client-side sort (never mutates filteredRows) ─────────────────────────
+  const sortedRows = useMemo(() => {
+    if (!sortConfig) return filteredRows;
+    return [...filteredRows].sort((a, b) =>
+      compareRowsByColumn(a, b, sortConfig.key, sortConfig.direction)
+    );
+  }, [filteredRows, sortConfig]);
+
+  // ── Virtualization window ─────────────────────────────────────────────────
+  const totalCount    = sortedRows.length;
+  const startIndex    = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
+  const endIndex      = Math.min(
+    totalCount,
+    Math.ceil((scrollTop + tableHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
+  );
+  const paddingTop    = startIndex * VIRTUAL_ROW_HEIGHT;
+  const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
+
+  const visibleRows = useMemo(
+    () => sortedRows.slice(startIndex, endIndex),
+    [sortedRows, startIndex, endIndex]
+  );
+
+  // ── Derived display flags ─────────────────────────────────────────────────
+  const showTable = (isFetching || allRows.length > 0) && !isIdle;
+  const noResults = !isFetching && searchQuery.trim() && filteredRows.length === 0 && allRows.length > 0;
 
   return (
     <Box sx={{ width: '100%', minWidth: 0 }}>
 
-      {/* ── Search input — matches SearchBar.jsx style exactly ── */}
+      {/* ── Search input ── */}
       {showTable && (
         <Box mb={1}>
           <TextField
@@ -285,7 +396,7 @@ export function StatusReportTab({ enabled }) {
         </Box>
       )}
 
-      {/* ── Idle ── */}
+      {/* ── Idle (tab not yet activated) ── */}
       {isIdle && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <CircularProgress size={28} />
@@ -293,7 +404,7 @@ export function StatusReportTab({ enabled }) {
         </Box>
       )}
 
-      {/* ── Error ── */}
+      {/* ── Error state ── */}
       {isError && (
         <Alert severity="error" sx={{ mb: 2, fontSize: '0.82rem' }}>
           {(() => {
@@ -322,24 +433,25 @@ export function StatusReportTab({ enabled }) {
         </Alert>
       )}
 
-      {/* ── Empty (no data from server today) ── */}
+      {/* ── Empty state (no data from server) ── */}
       {!isFetching && !isIdle && !isError && allRows.length === 0 && envelope && (
         <Alert severity="info" sx={{ fontSize: '0.82rem' }}>
           No status report records found for today.
         </Alert>
       )}
 
-      {/* ── Table (elevation=0 — single border from theme, no shadow stacking) ── */}
+      {/* ── Table with virtualized rows ── */}
       {showTable && (
         <TableContainer
           component={Paper}
           elevation={0}
+          ref={containerRef}
+          onScroll={handleScroll}
           sx={{
             width:     '100%',
             overflowX: 'auto',
-            // No minHeight — container shrinks to fit actual row count so
-            // a filtered 1-row result does not leave a large empty block below it.
-            maxHeight: { xs: 'calc(100vh - 340px)', xl: 'calc(100vh - 300px)' },
+            overflowY: 'auto',
+            maxHeight: tableHeight,
           }}
         >
           <Table
@@ -349,45 +461,44 @@ export function StatusReportTab({ enabled }) {
           >
             <TableHead>
               <TableRow>
-                {COLUMNS.map((col) => (
-                  <TableCell
-                    key={col.id}
-                    sx={{
-                      fontWeight: 700,
-                      // Fluid header font — slightly larger on xl+ for data density
-                      fontSize:   { xs: '0.72rem', md: '0.75rem', xl: '0.8rem' },
-                      minWidth:   col.minWidth,
-                      whiteSpace: { xs: 'normal', md: 'nowrap' },
-                      lineHeight: 1.3,
-                      py:         { xs: 1, xl: 1.25 },
-                      cursor:     col.id === '_status' ? 'pointer' : 'default',
-                      userSelect: col.id === '_status' ? 'none' : 'auto',
-                    }}
-                    onClick={col.id === '_status' ? handleStatusHeaderClick : undefined}
-                  >
-                    {col.id === '_status' ? (
-                      <TableSortLabel
-                        active={statusSortOrder !== 'default'}
-                        direction="asc"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStatusHeaderClick();
-                        }}
-                      >
-                        {col.label}
-                      </TableSortLabel>
-                    ) : (
-                      col.label
-                    )}
-                  </TableCell>
-                ))}
+                {COLUMNS.map((col) => {
+                  const isActive = sortConfig?.key === col.id;
+                  return (
+                    <TableCell
+                      key={col.id}
+                      sortDirection={isActive ? sortConfig.direction : false}
+                      sx={{
+                        fontWeight: 700,
+                        fontSize:   { xs: '0.72rem', md: '0.75rem', xl: '0.8rem' },
+                        minWidth:   col.minWidth,
+                        whiteSpace: { xs: 'normal', md: 'nowrap' },
+                        lineHeight: 1.3,
+                        py:         { xs: 1, xl: 1.25 },
+                        cursor:     col.sortable ? 'pointer' : 'default',
+                        userSelect: col.sortable ? 'none' : 'auto',
+                      }}
+                      onClick={col.sortable ? () => handleSortClick(col.id) : undefined}
+                    >
+                      {col.sortable ? (
+                        <TableSortLabel
+                          active={isActive}
+                          direction={isActive ? sortConfig.direction : 'asc'}
+                        >
+                          {col.label}
+                        </TableSortLabel>
+                      ) : (
+                        col.label
+                      )}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             </TableHead>
             <TableBody>
               {/* Loading skeletons */}
               {isFetching && allRows.length === 0 && <SkeletonRows rows={5} />}
 
-              {/* No search results */}
+              {/* No search results message */}
               {noResults && (
                 <TableRow>
                   <TableCell
@@ -399,14 +510,22 @@ export function StatusReportTab({ enabled }) {
                 </TableRow>
               )}
 
-              {/* Data rows */}
-              {!isFetching && filteredRows.map((row, idx) => {
+              {/* Top virtual spacer — preserves scroll position for rows above viewport */}
+              {!isFetching && paddingTop > 0 && (
+                <TableRow sx={{ height: `${paddingTop}px !important`, border: 0 }}>
+                  <TableCell colSpan={COLUMNS.length} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
+                </TableRow>
+              )}
+
+              {/* Visible data rows */}
+              {!isFetching && visibleRows.map((row, idx) => {
                 const isBizError = getRowStatus(row) === 'Biz Error';
+                // Use absolute index for stable key during virtualized scrolling
+                const absoluteIdx = startIndex + idx;
                 return (
                   <TableRow
-                    key={idx}
+                    key={absoluteIdx}
                     hover
-                    className={isBizError ? 'biz-error-row' : ''}
                     sx={{
                       backgroundColor: isBizError ? '#fff3e0 !important' : 'inherit',
                       '&:hover': {
@@ -418,11 +537,8 @@ export function StatusReportTab({ enabled }) {
                       <TableCell
                         key={col.id}
                         sx={{
-                          // Fluid row font — improves data density on large screens
                           fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
                           py:         { xs: 0.75, xl: 1 },
-                          // job_name / parent_job_name may be long PascalCase — allow wrap
-                          // job_group uses underscore tokens — keep on one line, clip with ellipsis
                           whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
                             ? 'normal'
                             : 'nowrap',
@@ -447,6 +563,13 @@ export function StatusReportTab({ enabled }) {
                   </TableRow>
                 );
               })}
+
+              {/* Bottom virtual spacer — maintains scrollbar thumb size */}
+              {!isFetching && paddingBottom > 0 && (
+                <TableRow sx={{ height: `${paddingBottom}px !important`, border: 0 }}>
+                  <TableCell colSpan={COLUMNS.length} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>
