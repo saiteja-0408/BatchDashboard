@@ -322,8 +322,8 @@ function parseSchedule(scheduleName, now = new Date()) {
 
   // ── 1. on_demand / no fixed schedule ──────────────────────────────────────
   const ON_DEMAND = ['on_demand', 'top_recert', 'user_stat',
-    'corr_appeals', 'corr_benefits', 'corr_bpc_tra', 'corr_dms',
-    'corr_dms_morningrun', 'corr_nonmon',
+    'corr_appeals', 'corr_benefits', 'corr_bpc_tra', 'corr_chargebilling', 'corr_dms',
+    'corr_dms_morningrun', 'corr_nonmon', 'corr_tax',
     'annual_recon_clearance_check_sch',
   ];
   if (ON_DEMAND.includes(lower)) {

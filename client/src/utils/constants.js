@@ -77,6 +77,7 @@ export const SORTABLE_COLUMNS = [
 // Used client-side for the warning badge — must be kept in sync with the server.
 export const VALID_SCHEDULE_NAMES = new Set([
   'MSAccess_reports_saturday_4am',
+  'annual_rate',
   'annual_recon_clearance_check_sch',
   'appeals_reports_145pm',
   'appeals_reports_615pm',
@@ -179,9 +180,11 @@ export const VALID_SCHEDULE_NAMES = new Set([
   'corr_appeals',
   'corr_benefits',
   'corr_bpc_tra',
+  'corr_chargebilling',
   'corr_dms',
   'corr_dms_morningrun',
   'corr_nonmon',
+  'corr_tax',
   'corr_webservice_twice_daily',
   'email_daily_2pm',
   'email_daily_5am',

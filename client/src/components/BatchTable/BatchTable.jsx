@@ -325,19 +325,17 @@ export function BatchTable({ batches, isLoading, isError }) {
   }, []);
 
   const totalCount = sortedData.length;
-  const totalHeight = totalCount * VIRTUAL_ROW_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
   const endIndex = Math.min(
     totalCount,
     Math.ceil((scrollTop + tableHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
   );
 
+  const paddingTop = startIndex * VIRTUAL_ROW_HEIGHT;
+  const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
+
   const visibleBatches = useMemo(() => {
-    return sortedData.slice(startIndex, endIndex).map((batch, i) => ({
-      batch,
-      index: startIndex + i,
-      top: (startIndex + i) * VIRTUAL_ROW_HEIGHT,
-    }));
+    return sortedData.slice(startIndex, endIndex);
   }, [sortedData, startIndex, endIndex]);
 
   return (
@@ -345,13 +343,17 @@ export function BatchTable({ batches, isLoading, isError }) {
       component={Paper}
       elevation={0}
       ref={containerRef}
+      onScroll={handleScroll}
       sx={{
         overflowX: 'auto',
+        overflowY: 'auto',
+        maxHeight: tableHeight,
         width:     '100%',
       }}
     >
       <Table
         size="small"
+        stickyHeader
         sx={{
           tableLayout: 'fixed',
           width: '100%',
@@ -368,7 +370,7 @@ export function BatchTable({ batches, isLoading, isError }) {
         <TableHead>
           <TableRow>
             {/* Warning indicator column — no sort */}
-            <TableCell sx={{ width: 44, minWidth: 44, px: 1 }} />
+            <TableCell sx={{ width: 44, minWidth: 44, px: 1, backgroundColor: 'background.paper' }} />
             {SORTABLE_COLUMNS.map((col) => (
               <TableCell
                 key={col.id}
@@ -378,6 +380,7 @@ export function BatchTable({ batches, isLoading, isError }) {
                   fontSize: { md: '0.8rem', xl: '0.875rem' },
                   cursor: 'pointer',
                   userSelect: 'none',
+                  backgroundColor: 'background.paper',
                 }}
                 onClick={() => requestSort(col.id)}
               >
@@ -394,78 +397,40 @@ export function BatchTable({ batches, isLoading, isError }) {
               </TableCell>
             ))}
             {SHOW_CURRENT_TASK && (
-              <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110, fontSize: { md: '0.8rem', xl: '0.875rem' } }}>
+              <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110, fontSize: { md: '0.8rem', xl: '0.875rem' }, backgroundColor: 'background.paper' }}>
                 Current Task
               </TableCell>
             )}
           </TableRow>
         </TableHead>
-      </Table>
-
-      {isLoading ? (
-        <Table size="small" sx={{ tableLayout: 'fixed', width: '100%', minWidth: 700 }}>
-          <colgroup>
-            <col style={{ width: 44 }} />
-            <col style={{ width: '28%' }} />
-            <col style={{ width: '25%' }} />
-            <col style={{ width: '35%' }} />
-            <col style={{ width: '12%' }} />
-          </colgroup>
-          <TableBody>
+        <TableBody>
+          {isLoading ? (
             <SkeletonRows />
-          </TableBody>
-        </Table>
-      ) : (
-        <Box
-          onScroll={handleScroll}
-          sx={{
-            height: tableHeight,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            position: 'relative',
-          }}
-        >
-          <Box sx={{ height: totalHeight, position: 'relative', width: '100%' }}>
-            {visibleBatches.map(({ batch, top }) => (
-              <Box
-                key={batch.batchName}
-                sx={{
-                  position: 'absolute',
-                  top,
-                  left: 0,
-                  right: 0,
-                  height: VIRTUAL_ROW_HEIGHT,
-                }}
-              >
-                <Table
-                  size="small"
-                  sx={{
-                    tableLayout: 'fixed',
-                    width: '100%',
-                    minWidth: 700,
-                  }}
-                >
-                  <colgroup>
-                    <col style={{ width: 44 }} />
-                    <col style={{ width: '28%' }} />
-                    <col style={{ width: '25%' }} />
-                    <col style={{ width: '35%' }} />
-                    <col style={{ width: '12%' }} />
-                  </colgroup>
-                  <TableBody>
-                    <BatchRow
-                      batch={batch}
-                      currentTask={SHOW_CURRENT_TASK ? currentTaskMap[batch.batchName] : undefined}
-                      ctLoading={ctLoading}
-                      onClick={openBatchModal}
-                    />
-                  </TableBody>
-                </Table>
-              </Box>
-            ))}
-          </Box>
-        </Box>
-      )}
+          ) : (
+            <>
+              {paddingTop > 0 && (
+                <TableRow sx={{ height: `${paddingTop}px !important`, border: 0 }}>
+                  <TableCell colSpan={5} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
+                </TableRow>
+              )}
+              {visibleBatches.map((batch) => (
+                <BatchRow
+                  key={batch.batchName}
+                  batch={batch}
+                  currentTask={SHOW_CURRENT_TASK ? currentTaskMap[batch.batchName] : undefined}
+                  ctLoading={ctLoading}
+                  onClick={openBatchModal}
+                />
+              ))}
+              {paddingBottom > 0 && (
+                <TableRow sx={{ height: `${paddingBottom}px !important`, border: 0 }}>
+                  <TableCell colSpan={5} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
+                </TableRow>
+              )}
+            </>
+          )}
+        </TableBody>
+      </Table>
     </TableContainer>
   );
 }
