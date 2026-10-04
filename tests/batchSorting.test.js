@@ -29,15 +29,21 @@ function compareValues(a, b, order = 'asc') {
 
 function requestSort(currentConfig, key) {
   if (!currentConfig || currentConfig.key !== key) return { key, direction: 'asc' };
-  return { key, direction: currentConfig.direction === 'asc' ? 'desc' : 'asc' };
+  if (currentConfig.direction === 'asc') return { key, direction: 'desc' };
+  return null; // none
 }
 
 function requestScopedSort(configs, scope, key) {
   const current = configs[scope];
-  const next = (!current || current.key !== key)
-    ? { key, direction: 'asc' }
-    : { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
-  return { ...configs, [scope]: next };
+  if (!current || current.key !== key) {
+    return { ...configs, [scope]: { key, direction: 'asc' } };
+  }
+  if (current.direction === 'asc') {
+    return { ...configs, [scope]: { key, direction: 'desc' } };
+  }
+  const next = { ...configs };
+  delete next[scope];
+  return next;
 }
 
 describe('compareValues helper', () => {
@@ -110,7 +116,7 @@ describe('compareValues helper', () => {
   });
 
   describe('requestSort state transitions', () => {
-    test('cycles ascending → descending → ascending on same column', () => {
+    test('cycles ascending → descending → none on same column', () => {
       let sort = null;
       sort = requestSort(sort, 'batchName');
       expect(sort).toEqual({ key: 'batchName', direction: 'asc' });
@@ -119,7 +125,7 @@ describe('compareValues helper', () => {
       expect(sort).toEqual({ key: 'batchName', direction: 'desc' });
 
       sort = requestSort(sort, 'batchName');
-      expect(sort).toEqual({ key: 'batchName', direction: 'asc' });
+      expect(sort).toBeNull();
     });
 
     test('switches to new column resetting direction to ascending', () => {
@@ -137,6 +143,10 @@ describe('compareValues helper', () => {
 
       configs = requestScopedSort(configs, 'benefits', 'batchName');
       expect(configs.benefits).toEqual({ key: 'batchName', direction: 'desc' });
+      expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
+
+      configs = requestScopedSort(configs, 'benefits', 'batchName');
+      expect(configs.benefits).toBeUndefined();
       expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
     });
   });

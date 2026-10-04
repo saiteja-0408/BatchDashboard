@@ -28,10 +28,16 @@ export function useSort(data, scopeKey) {
   const requestSort = useCallback((key) => {
     setSortConfigs((prev) => {
       const current = prev[activeScope];
-      const next = (!current || current.key !== key)
-        ? { key, direction: 'asc' }
-        : { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
-      return { ...prev, [activeScope]: next };
+      if (!current || current.key !== key) {
+        return { ...prev, [activeScope]: { key, direction: 'asc' } };
+      }
+      if (current.direction === 'asc') {
+        return { ...prev, [activeScope]: { key, direction: 'desc' } };
+      }
+      // Cycle from 'desc' -> 'none' (remove/reset sort)
+      const next = { ...prev };
+      delete next[activeScope];
+      return next;
     });
   }, [activeScope]);
 

@@ -19,18 +19,26 @@ import { SHEET_SOURCES, SHEET_LABELS } from '../../utils/constants';
  */
 function BenefitsHandshakeIcon(props) {
   return (
-    <SvgIcon {...props} viewBox="0 0 48 32">
-      {/* Solid handshake silhouette matching the image exact geometry */}
+    <SvgIcon {...props} viewBox="0 0 32 20">
+      {/*
+        Exact reproduction of the blue handshake glyph:
+        - Rounded sleeve/cuff on the left
+        - Rounded sleeve/cuff on the right
+        - Interlocking fingers and palm in solid blue
+        - Characteristic rounded inner loop cut-out
+      */}
       <path
         fill="currentColor"
-        d="M 5 11 C 2.5 11 1 12.5 1 15 L 1 19 C 1 21.5 2.5 23 5 23 L 9.5 23 C 10.8 23 11.8 22.2 12.2 21.2 L 14.5 23.5 C 15.7 24.7 17.3 25.4 19 25.4 L 23.2 25.4 C 23.8 26.5 24.9 27.2 26.2 27.2 L 27.8 27.2 C 29.5 27.2 30.8 25.8 30.8 24.2 C 30.8 23.9 30.7 23.6 30.6 23.4 C 31.8 23.1 32.7 22 32.7 20.6 C 32.7 20.3 32.6 20 32.5 19.8 C 33.7 19.4 34.5 18.3 34.5 17 C 34.5 16.6 34.4 16.3 34.2 16 L 38.5 16 C 41 16 42.5 14.5 42.5 12 L 42.5 8 C 42.5 5.5 41 4 38.5 4 L 34 4 C 32.8 4 31.8 4.7 31.2 5.8 L 29 3.5 C 27.8 2.3 26.2 1.6 24.5 1.6 L 19 1.6 C 16.2 1.6 13.8 3.5 13.1 6.2 L 10.5 8.8 C 10.2 8.7 9.8 8.6 9.5 8.6 L 5 8.6 C 2.5 8.6 1 10.1 1 12.6 L 1 14.4 C 1 14.6 1 14.8 1.1 15 C 1 14.8 1 14.6 1 14.4 Z"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M 4 5 C 1.8 5 0 6.8 0 9 L 0 13 C 0 15.2 1.8 17 4 17 L 8 17 C 8.6 17 9.1 16.8 9.5 16.4 L 14.5 21.4 C 15.8 22.7 17.6 23.4 19.4 23.2 C 21.2 23 22.8 21.9 23.6 20.3 L 28 20.3 C 30.2 20.3 32 18.5 32 16.3 L 32 12.3 C 32 10.1 30.2 8.3 28 8.3 L 23.5 8.3 C 23.1 8.3 22.7 8.5 22.4 8.8 L 19.3 5.7 C 17.6 4 15 3.3 12.7 4.1 L 8 5 L 4 5 Z M 16.8 9.2 C 16.2 8.6 15.2 8.6 14.6 9.2 C 14 9.8 14 10.8 14.6 11.4 L 17.6 14.4 C 18.2 15 19.2 15 19.8 14.4 C 20.4 13.8 20.4 12.8 19.8 12.2 L 16.8 9.2 Z"
       />
-      {/* Characteristic white loop / cane-shaped separation groove */}
+      {/* Precision inner whitespace contour matching the image */}
       <path
-        d="M 27 15.5 L 21.5 10 C 20.4 8.9 18.6 8.9 17.5 10 C 16.4 11.1 16.4 12.9 17.5 14 C 18.6 15.1 20.4 15.1 21.5 14 L 22.8 12.7"
+        d="M 18.5 13.5 L 15.5 10.5 C 14.7 9.7 13.3 9.7 12.5 10.5 C 11.7 11.3 11.7 12.7 12.5 13.5 L 14.5 15.5"
         fill="none"
         stroke="var(--mui-palette-background-paper, #ffffff)"
-        strokeWidth="2.2"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
