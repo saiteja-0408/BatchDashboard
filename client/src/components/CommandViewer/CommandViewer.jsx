@@ -1,36 +1,40 @@
 /**
- * CommandViewer.jsx — 4-section copy-paste panel for a selected batch.
+ * CommandViewer.jsx — copy-paste panel for a selected batch.
  *
- * Sections:
- *   1. Change Directory  — domain-specific cd command from batch.logDir
- *   2. Run Command       — sudo ./qclient.sh runJobOnly …
- *   3. Resume Command    — sudo ./qclient.sh resumeJob …
- *   4. Log Paths         — domain-filtered paths with batch name substituted
+ * Sections rendered:
+ *   - Log Paths  — domain-filtered paths with batch name substituted
  *
- * Each section renders as a labelled CommandBlock with a one-click copy button.
- * No static placeholder text — batch name is always substituted at render time.
+ * Removed sections (per requirements):
+ *   - Change Directory (cd command)
+ *   - Run Command
+ *   - Resume Command
+ *   - Benefits logs entry (entire block removed)
+ *   - Benefits logs archive label (label hidden; copy button + path retained)
  */
 
 import React from 'react';
 import PropTypes from 'prop-types';
 import {
-  Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
+  Box, Typography, Tooltip, IconButton, Stack, Alert,
 } from '@mui/material';
 import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
 import CheckIcon        from '@mui/icons-material/Check';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { buildQclientLine, LOG_PATH_DEFS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
+import { LOG_PATH_DEFS, VALID_SCHEDULE_NAMES } from '../../utils/constants';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 // ── CommandBlock ──────────────────────────────────────────────────────────────
 
 /**
- * Single labelled copy-paste block.
- * label      — section heading text (e.g. "Change Directory")
- * sublabel   — optional smaller descriptor shown next to the label
- * value      — the text to display and copy
+ * Single copy-paste block.
+ *
+ * Props:
+ *   label      — heading text shown in the header bar
+ *   showLabel  — when false the label Typography is hidden; copy button remains
+ *   sublabel   — optional smaller descriptor beside the label
+ *   value      — the text to display in the body and copy to clipboard
  */
-const CommandBlock = React.memo(function CommandBlock({ label, sublabel, value }) {
+const CommandBlock = React.memo(function CommandBlock({ label, showLabel = true, sublabel, value }) {
   const { copy, copied } = useCopyToClipboard();
 
   return (
@@ -54,9 +58,11 @@ const CommandBlock = React.memo(function CommandBlock({ label, sublabel, value }
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0 }}>
-          <Typography variant="body2" fontWeight={700} noWrap>
-            {label}
-          </Typography>
+          {showLabel && (
+            <Typography variant="body2" fontWeight={700} noWrap>
+              {label}
+            </Typography>
+          )}
           {sublabel && (
             <Typography variant="caption" color="text.secondary" noWrap>
               {sublabel}
@@ -93,34 +99,19 @@ const CommandBlock = React.memo(function CommandBlock({ label, sublabel, value }
   );
 });
 CommandBlock.propTypes = {
-  label:    PropTypes.string.isRequired,
-  sublabel: PropTypes.string,
-  value:    PropTypes.string.isRequired,
+  label:     PropTypes.string.isRequired,
+  showLabel: PropTypes.bool,
+  sublabel:  PropTypes.string,
+  value:     PropTypes.string.isRequired,
 };
 
-// ── Section wrapper ───────────────────────────────────────────────────────────
+// ── Labels to skip or hide within the Log Paths section ──────────────────────
 
-function Section({ title, children }) {
-  return (
-    <Box>
-      <Typography
-        variant="caption"
-        fontWeight={700}
-        color="text.secondary"
-        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', mb: 0.75 }}
-      >
-        {title}
-      </Typography>
-      <Stack spacing={1}>
-        {children}
-      </Stack>
-    </Box>
-  );
-}
-Section.propTypes = {
-  title:    PropTypes.string.isRequired,
-  children: PropTypes.node.isRequired,
-};
+/** Entire CommandBlock is omitted for these labels. */
+const SKIP_LOG_LABELS = new Set(['Benefits logs']);
+
+/** Label Typography is hidden (copy button + path body retained) for these. */
+const HIDE_LABEL_LOG_LABELS = new Set(['Benefits logs archive']);
 
 // ── CommandViewer ─────────────────────────────────────────────────────────────
 
@@ -131,11 +122,14 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   if (!batch) return null;
 
   const scheduleIsValid = VALID_SCHEDULE_NAMES.has(batch.scheduleName);
-  const domain = batch.sheetSource; // 'benefits' | 'tax'
+  const domain  = batch.sheetSource; // 'benefits' | 'tax'
   const logDefs = LOG_PATH_DEFS[domain] ?? [];
 
+  // Filter and annotate log entries per the removal rules above
+  const visibleLogDefs = logDefs.filter(({ label }) => !SKIP_LOG_LABELS.has(label));
+
   return (
-    <Stack spacing={0} divider={<Divider sx={{ my: 2 }} />}>
+    <Stack spacing={2}>
 
       {/* ── Warnings ── */}
       {!batch.scheduleName && (
@@ -154,45 +148,22 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
         </Alert>
       )}
 
-      {/* ── Change Directory ── */}
-      <Section title="Change Directory">
-        <CommandBlock
-          label="cd"
-          value={batch.logDir}
-        />
-      </Section>
-
-      {/* ── Run Command ── */}
-      <Section title="Run Command">
-        <CommandBlock
-          label="Run"
-          value={buildQclientLine(batch, 'runJobOnly')}
-        />
-      </Section>
-
-      {/* ── Resume Command ── */}
-      <Section title="Resume Command">
-        <CommandBlock
-          label="Resume"
-          value={buildQclientLine(batch, 'resumeJob')}
-        />
-      </Section>
-
       {/* ── Log Paths ── */}
-      <Section title="Log Paths">
-        {logDefs.map(({ label, path }) => (
+      <Stack spacing={1}>
+        {visibleLogDefs.map(({ label, path }) => (
           <CommandBlock
             key={label}
             label={label}
+            showLabel={!HIDE_LABEL_LOG_LABELS.has(label)}
             value={path(batch.batchName)}
           />
         ))}
-        {logDefs.length === 0 && (
+        {visibleLogDefs.length === 0 && (
           <Typography variant="caption" color="text.secondary">
             No log paths defined for domain "{domain}".
           </Typography>
         )}
-      </Section>
+      </Stack>
 
     </Stack>
   );
