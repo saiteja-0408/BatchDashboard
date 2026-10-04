@@ -17,14 +17,14 @@ export function useSort(data) {
   const [sortConfig, setSortConfig] = useState(null);
 
   /**
-   * Cycles sort direction for the given column key:
-   *   none → asc → desc → none
+   * Toggles sort direction for the given column key:
+   *   - Clicking a new column sets direction to 'asc'
+   *   - Clicking the active column toggles between 'asc' and 'desc'
    */
   const requestSort = useCallback((key) => {
     setSortConfig((prev) => {
       if (!prev || prev.key !== key) return { key, direction: 'asc' };
-      if (prev.direction === 'asc')  return { key, direction: 'desc' };
-      return null; // reset
+      return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
     });
   }, []);
 

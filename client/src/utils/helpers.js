@@ -27,23 +27,28 @@ export function formatDate(value) {
  * @returns {number}
  */
 export function compareValues(a, b, order = 'asc') {
-  // Treat nulls as smaller than everything
+  // Treat null / undefined / empty string as smaller than everything
+  if ((a === null || a === undefined || a === '') && (b === null || b === undefined || b === '')) return 0;
   if (a === null || a === undefined || a === '') return order === 'asc' ? 1 : -1;
   if (b === null || b === undefined || b === '') return order === 'asc' ? -1 : 1;
 
-  // Date comparison
-  const dateA = new Date(a);
-  const dateB = new Date(b);
-  if (!isNaN(dateA) && !isNaN(dateB)) {
-    return order === 'asc' ? dateA - dateB : dateB - dateA;
+  // Numeric comparison if both values are numbers (or numeric strings)
+  const numA = typeof a === 'number' ? a : (typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a)) ? Number(a) : NaN);
+  const numB = typeof b === 'number' ? b : (typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b)) ? Number(b) : NaN);
+  if (!isNaN(numA) && !isNaN(numB)) {
+    return order === 'asc' ? numA - numB : numB - numA;
   }
 
-  // String comparison
-  const sa = String(a).toLowerCase();
-  const sb = String(b).toLowerCase();
-  if (sa < sb) return order === 'asc' ? -1 : 1;
-  if (sa > sb) return order === 'asc' ? 1 : -1;
-  return 0;
+  // Date comparison for Date objects or ISO/date formatted strings only
+  if (a instanceof Date && b instanceof Date) {
+    return order === 'asc' ? a.getTime() - b.getTime() : b.getTime() - a.getTime();
+  }
+
+  // String natural / case-insensitive comparison
+  const sa = String(a);
+  const sb = String(b);
+  const comp = sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
+  return order === 'asc' ? comp : -comp;
 }
 
 /**

@@ -303,12 +303,18 @@ export function BatchTable({ batches, isLoading, isError }) {
                   whiteSpace: 'nowrap',
                   fontWeight: 700,
                   fontSize: { md: '0.8rem', xl: '0.875rem' },
+                  cursor: 'pointer',
+                  userSelect: 'none',
                 }}
+                onClick={() => requestSort(col.id)}
               >
                 <TableSortLabel
                   active={sortConfig?.key === col.id}
                   direction={sortConfig?.key === col.id ? sortConfig.direction : 'asc'}
-                  onClick={() => requestSort(col.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    requestSort(col.id);
+                  }}
                 >
                   {col.label}
                 </TableSortLabel>
