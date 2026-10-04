@@ -24,7 +24,6 @@ import { BatchTable }       from '../components/BatchTable/BatchTable';
 import { BatchDetailModal } from '../components/BatchDetailModal/BatchDetailModal';
 import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab';
 
-import { AppHeader }         from '../components/AppHeader/AppHeader';
 import { useBatchContext }   from '../context/BatchContext';
 import { useAllBatches }     from '../hooks/useBatches';
 import { uploadSheet }       from '../services/apiService';
@@ -127,8 +126,6 @@ export default function Dashboard() {
      * maxWidth={false} — fills the full viewport width at every screen size.
      * py/px props provide the only inset; no centred-column cap is applied.
      */
-    <>
-    <AppHeader />
     <Container
       maxWidth={false}
       sx={{
@@ -253,6 +250,5 @@ export default function Dashboard() {
         </Alert>
       </Snackbar>
     </Container>
-    </>
   );
 }

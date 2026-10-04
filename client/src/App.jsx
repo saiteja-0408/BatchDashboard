@@ -15,7 +15,6 @@ import { Box, CircularProgress }           from '@mui/material';
 
 import { AppThemeProvider } from './context/ThemeContext';
 import { BatchProvider }    from './context/BatchContext';
-import { AppHeader }        from './components/AppHeader/AppHeader';
 
 // Lazy-load Dashboard (and transitively BatchDetailModal) — deferred until first render
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -35,7 +34,6 @@ export default function App() {
       <AppThemeProvider>
         <BatchProvider>
           <BrowserRouter>
-            <AppHeader />
             <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
               <Suspense fallback={
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
