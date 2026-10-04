@@ -341,6 +341,7 @@ export function BatchTable({ batches, isLoading, isError }) {
             {SORTABLE_COLUMNS.map((col) => (
               <TableCell
                 key={col.id}
+                sortDirection={sortConfig?.key === col.id ? sortConfig.direction : false}
                 sx={{
                   whiteSpace: 'nowrap',
                   fontWeight: 700,
@@ -354,10 +355,6 @@ export function BatchTable({ batches, isLoading, isError }) {
                 <TableSortLabel
                   active={sortConfig?.key === col.id}
                   direction={sortConfig?.key === col.id ? sortConfig.direction : 'asc'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    requestSort(col.id);
-                  }}
                 >
                   {col.label}
                 </TableSortLabel>

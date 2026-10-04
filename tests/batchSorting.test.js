@@ -30,7 +30,7 @@ function compareValues(a, b, order = 'asc') {
 function requestSort(currentConfig, key) {
   if (!currentConfig || currentConfig.key !== key) return { key, direction: 'asc' };
   if (currentConfig.direction === 'asc') return { key, direction: 'desc' };
-  return null; // none
+  return { key, direction: 'asc' };
 }
 
 function requestScopedSort(configs, scope, key) {
@@ -41,9 +41,7 @@ function requestScopedSort(configs, scope, key) {
   if (current.direction === 'asc') {
     return { ...configs, [scope]: { key, direction: 'desc' } };
   }
-  const next = { ...configs };
-  delete next[scope];
-  return next;
+  return { ...configs, [scope]: { key, direction: 'asc' } };
 }
 
 describe('compareValues helper', () => {
@@ -116,7 +114,7 @@ describe('compareValues helper', () => {
   });
 
   describe('requestSort state transitions', () => {
-    test('cycles ascending → descending → none on same column', () => {
+    test('cycles ascending → descending → ascending on same column', () => {
       let sort = null;
       sort = requestSort(sort, 'batchName');
       expect(sort).toEqual({ key: 'batchName', direction: 'asc' });
@@ -125,7 +123,7 @@ describe('compareValues helper', () => {
       expect(sort).toEqual({ key: 'batchName', direction: 'desc' });
 
       sort = requestSort(sort, 'batchName');
-      expect(sort).toBeNull();
+      expect(sort).toEqual({ key: 'batchName', direction: 'asc' });
     });
 
     test('switches to new column resetting direction to ascending', () => {
@@ -146,7 +144,7 @@ describe('compareValues helper', () => {
       expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
 
       configs = requestScopedSort(configs, 'benefits', 'batchName');
-      expect(configs.benefits).toBeUndefined();
+      expect(configs.benefits).toEqual({ key: 'batchName', direction: 'asc' });
       expect(configs.tax).toEqual({ key: 'scheduleName', direction: 'asc' });
     });
   });

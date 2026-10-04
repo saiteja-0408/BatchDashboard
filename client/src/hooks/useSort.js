@@ -34,10 +34,8 @@ export function useSort(data, scopeKey) {
       if (current.direction === 'asc') {
         return { ...prev, [activeScope]: { key, direction: 'desc' } };
       }
-      // Cycle from 'desc' -> 'none' (remove/reset sort)
-      const next = { ...prev };
-      delete next[activeScope];
-      return next;
+      // Cycle from 'desc' -> 'asc'
+      return { ...prev, [activeScope]: { key, direction: 'asc' } };
     });
   }, [activeScope]);
 
