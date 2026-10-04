@@ -93,24 +93,36 @@ function SkeletonRows({ rows = 5 }) {
 
 /**
  * Formats a cell value for display.
- * Timestamps → locale short date+time. Null/empty → em dash.
+ * start_time → time only (HH:MM:SS AM/PM).
+ * All other timestamp columns → locale short date+time.
+ * Null/empty → em dash.
+ *
+ * @param {*}      value  Raw cell value
+ * @param {string} colId  Column id (e.g. 'start_time')
  */
-function formatCell(value) {
+function formatCell(value, colId) {
   if (value === null || value === undefined || value === '') return '—';
-  if (value instanceof Date) {
-    return value.toLocaleString(undefined, {
+
+  const toDate = (v) => {
+    if (v instanceof Date) return v;
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  };
+
+  const d = toDate(value);
+  if (d) {
+    if (colId === 'start_time') {
+      return d.toLocaleTimeString(undefined, {
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+    }
+    return d.toLocaleString(undefined, {
       month: '2-digit', day: '2-digit',
       hour:  '2-digit', minute: '2-digit', second: '2-digit',
     });
-  }
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
-    const d = new Date(value);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleString(undefined, {
-        month: '2-digit', day: '2-digit',
-        hour:  '2-digit', minute: '2-digit', second: '2-digit',
-      });
-    }
   }
   return String(value);
 }
@@ -326,7 +338,7 @@ export function StatusReportTab({ enabled }) {
                     >
                       {col.id === '_status'
                         ? <StatusChip flag={row.biz_error_flag} />
-                        : formatCell(row[col.id])
+                        : formatCell(row[col.id], col.id)
                       }
                     </TableCell>
                   ))}
