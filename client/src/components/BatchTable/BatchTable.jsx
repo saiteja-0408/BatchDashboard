@@ -215,7 +215,6 @@ BatchRow.propTypes = {
  */
 export function BatchTable({ batches, isLoading, isError }) {
   const { openBatchModal, activeSheet } = useBatchContext();
-  const { sortedData, sortConfig, requestSort } = useSort(batches, activeSheet);
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -240,6 +239,21 @@ export function BatchTable({ batches, isLoading, isError }) {
   const containerRef = useRef(null);
   const [tableHeight, setTableHeight] = useState(500);
   const [scrollTop, setScrollTop]     = useState(0);
+
+  /**
+   * Wraps requestSort and resets the scroll position to the top before the
+   * sorted data is rendered. Without this, the virtualization window retains
+   * its previous scrollTop offset against the newly-reordered array, causing
+   * the paddingTop spacer <TableRow> to appear as a phantom blank row in the
+   * visible area — which is the "row added on header click" bug.
+   */
+  const { sortedData, sortConfig, requestSort: _requestSort } = useSort(batches, activeSheet);
+  const requestSort = useCallback((colId) => {
+    // Reset scroll state first so the virtual window recalculates from index 0
+    setScrollTop(0);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+    _requestSort(colId);
+  }, [_requestSort]);
 
   useEffect(() => {
     /** Recalculates the container height to fill the visible viewport area. */
