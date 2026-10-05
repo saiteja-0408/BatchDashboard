@@ -69,9 +69,12 @@ export default function Dashboard() {
 
     const q = searchQuery.toLowerCase();
     return allBatches.filter((b) =>
-      b.batchName.toLowerCase().includes(q)    ||
-      b.scheduleName.toLowerCase().includes(q) ||
-      (b.arguments || '').toLowerCase().includes(q)
+      // Guard all three fields with (|| '') so a null/undefined scheduleName or
+      // batchName never throws "Cannot read properties of null (reading 'toLowerCase')",
+      // which would silently break the filter and leave the table empty/frozen.
+      (b.batchName    || '').toLowerCase().includes(q) ||
+      (b.scheduleName || '').toLowerCase().includes(q) ||
+      (b.arguments    || '').toLowerCase().includes(q)
     );
   }, [allBatches, searchQuery, isStatusReportTab]);
 
