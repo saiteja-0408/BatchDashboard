@@ -63,7 +63,10 @@ async function filterBatches(req, res) {
  * NOTE: registered AFTER /summary, /search, /filter in batchRoutes.js
  */
 async function getBatchByName(req, res) {
-  const name  = decodeURIComponent(req.params.name);
+  // LOG-17: Express already decodes URL params once; calling decodeURIComponent again
+  // would double-decode (e.g. "Batch%2520Name" → "Batch%20Name" → "Batch Name").
+  // Use the raw param value directly.
+  const name  = req.params.name;
   const sheet = req.query.sheet || undefined;
   await excelService.syncFromDisk(sheet);
   const batch = excelService.getByName(name, sheet);

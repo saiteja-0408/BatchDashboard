@@ -241,6 +241,10 @@ export function StatusReportTab({ enabled }) {
     error,
   } = useStatusReport(enabled);
 
+  // LOG-05: show stale rows during a background refetch instead of blanking the
+  // table. We maintain a `displayRows` ref that holds the last known-good data
+  // so the user always sees something while a new request is in-flight.
+
   // ── Local search state ────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -287,12 +291,19 @@ export function StatusReportTab({ enabled }) {
   // ── Sort column header click ──────────────────────────────────────────────
   const handleSortClick = useCallback((colId) => {
     setSortConfig((prev) => nextSortConfig(prev, colId));
-    // Reset scroll to top so the user sees the sorted result from the beginning
+    // LOG-06: reset scroll to top so the user sees the sorted result from the beginning
     setScrollTop(0);
     if (containerRef.current) containerRef.current.scrollTop = 0;
   }, []);
 
   const allRows = envelope?.data ?? [];
+
+  // LOG-06: reset scroll whenever the filter query changes so the user sees
+  // filtered results from row 0 rather than a potentially empty viewport.
+  useEffect(() => {
+    setScrollTop(0);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+  }, [searchQuery]);
 
   // ── Client-side filter ────────────────────────────────────────────────────
   const filteredRows = useMemo(() => {
@@ -517,19 +528,34 @@ export function StatusReportTab({ enabled }) {
                 </TableRow>
               )}
 
-              {/* Visible data rows */}
-              {!isFetching && visibleRows.map((row, idx) => {
-                const isBizError = getRowStatus(row) === 'Biz Error';
-                // Use absolute index for stable key during virtualized scrolling
-                const absoluteIdx = startIndex + idx;
+              {/* Visible data rows — LOG-05: render when allRows exist even during refetch */}
+              {(!isFetching || allRows.length > 0) && visibleRows.map((row, idx) => {
+                const rowStatus  = getRowStatus(row);
+                const isBizError = rowStatus === 'Biz Error';
+                const isKilled   = rowStatus === 'Killed';
+                const isError    = rowStatus === 'Error';
+                // LOG-23: use stable composite key (job_name + job_group + start_time)
+                // instead of the mutable absolute index to prevent React reconciler
+                // confusion when rows are inserted/removed above the viewport.
+                const rowKey = `${row.job_name ?? ''}_${row.job_group ?? ''}_${row.start_time ?? idx}`;
                 return (
                   <TableRow
-                    key={absoluteIdx}
+                    key={rowKey}
                     hover
                     sx={{
-                      backgroundColor: isBizError ? '#fff3e0 !important' : 'inherit',
-                      '&:hover': {
-                        backgroundColor: isBizError ? '#ffe0b2 !important' : undefined,
+                      // QUAL-05: use theme palette tokens instead of hardcoded hex colors
+                      // so Biz Error rows are visible in both light and dark mode.
+                      backgroundColor: isBizError
+                        ? 'error.50'
+                        : isKilled || isError
+                          ? 'warning.50'
+                          : 'inherit',
+                      '&.MuiTableRow-hover:hover': {
+                        backgroundColor: isBizError
+                          ? 'error.100'
+                          : isKilled || isError
+                            ? 'warning.100'
+                            : undefined,
                       },
                     }}
                   >
@@ -537,14 +563,13 @@ export function StatusReportTab({ enabled }) {
                       <TableCell
                         key={col.id}
                         sx={{
-                          fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
-                          py:         { xs: 0.75, xl: 1 },
-                          whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
-                            ? 'normal'
-                            : 'nowrap',
-                          wordBreak:    col.id === 'job_name' || col.id === 'parent_job_name'
-                            ? 'break-word'
-                            : 'normal',
+                          fontSize:     { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
+                          py:           { xs: 0.75, xl: 1 },
+                          // LOG-08: all cells must be nowrap to maintain the fixed-height
+                          // VIRTUAL_ROW_HEIGHT assumption. Wrapping text causes rows to
+                          // be taller than VIRTUAL_ROW_HEIGHT, breaking the virtual scroll
+                          // math and making rows in the lower portion of the dataset unreachable.
+                          whiteSpace:   'nowrap',
                           overflow:     'hidden',
                           textOverflow: 'ellipsis',
                           maxWidth: col.id === 'job_name'

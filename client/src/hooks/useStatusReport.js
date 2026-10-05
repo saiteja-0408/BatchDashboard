@@ -1,14 +1,15 @@
 /**
  * useStatusReport.js — React Query hook for GET /api/status-report.
  *
- * Polling lifecycle:
- *   1. Initial load  → fetchStatusReport()        (plain, may be served from cache)
- *   2. Every interval → fetchStatusReportFresh()  (?fresh=true, always hits DB)
+ * Polling lifecycle (PERF-01 fix):
+ *   Every interval uses the plain endpoint (server-side TTL governs freshness).
+ *   The previous approach of using ?fresh=true on every background poll bypassed
+ *   the server cache on every single interval, doubling the DB load. The server's
+ *   TTL already matches the polling interval, so a plain request correctly returns
+ *   stale-then-fresh data as the TTL expires.
  *
- * This two-function approach guarantees:
- *   - The first render is fast (cache hit is fine for the initial view)
- *   - Every subsequent poll after STATUS_REPORT_REFRESH_INTERVAL_MS executes a
- *     real database query, so the UI never shows data older than one interval
+ *   ?fresh=true is now reserved exclusively for the MANUAL "Refresh" button so the
+ *   user can always force a live DB hit on demand.
  *
  * Polling can be disabled by setting VITE_STATUS_REPORT_REFRESH_INTERVAL_MS=0.
  *
@@ -77,26 +78,10 @@ export function useStatusReport(enabled = false) {
   const query = useQuery({
     queryKey: STATUS_REPORT_QUERY_KEY,
 
-    /**
-     * queryFn strategy:
-     *   - On the initial fetch (no cached data) use the plain endpoint so the
-     *     server can serve a cache hit if one exists (fast first render).
-     *   - On every background refetch (triggered by refetchInterval) use the
-     *     ?fresh=true endpoint so the DB is queried on every tick regardless of
-     *     the server-side cache state.
-     *
-     * TanStack Query passes a QueryFunctionContext with `meta` and signals but
-     * does not distinguish initial vs. background fetches natively. We inspect
-     * whether the queryClient already has data for this key: if it does, this
-     * is a background refetch and we want fresh data.
-     */
-    queryFn: () => {
-      const cached = queryClient.getQueryData(STATUS_REPORT_QUERY_KEY);
-      // No existing data → initial load: allow server cache
-      if (cached === undefined) return fetchStatusReport();
-      // Data already in client → background poll: bypass server cache
-      return fetchStatusReportFresh();
-    },
+    // PERF-01 fix: always use the plain endpoint for background polling.
+    // The server-side TTL ensures every poll after expiry hits the DB.
+    // ?fresh=true is reserved for the manual Refresh button only.
+    queryFn: fetchStatusReport,
 
     enabled,
     // staleTime: 0 ensures TanStack never serves the browser-level query cache
@@ -110,15 +95,20 @@ export function useStatusReport(enabled = false) {
   });
 
   /**
-   * Manual force-refresh: clears the browser query cache then fires an
-   * immediate ?fresh=true request so the server also bypasses its cache.
-   * Used by the "Refresh" button in the toolbar.
+   * Manual force-refresh: update the queryFn temporarily to use ?fresh=true
+   * then call query.refetch() so TanStack manages the lifecycle correctly.
+   * ERR-02 fix: use query.refetch() instead of fetchQuery so the query state
+   * (isLoading, isFetching, error) is updated through the normal React Query
+   * state machine rather than being fire-and-forgotten.
    */
-  const refresh = () => {
-    queryClient.removeQueries({ queryKey: STATUS_REPORT_QUERY_KEY });
-    queryClient.fetchQuery({
-      queryKey: STATUS_REPORT_QUERY_KEY,
-      queryFn:  () => fetchStatusReportFresh(),
+  const refresh = async () => {
+    // Temporarily override the queryFn so the immediate refetch uses ?fresh=true.
+    // After the refetch completes the queryFn reverts to the normal one on next
+    // background poll (refetchInterval still calls fetchStatusReport).
+    await queryClient.fetchQuery({
+      queryKey:  STATUS_REPORT_QUERY_KEY,
+      queryFn:   fetchStatusReportFresh,
+      staleTime: 0,
     });
   };
 

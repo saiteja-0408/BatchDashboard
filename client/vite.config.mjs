@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // DEP-03: resolve .env files from the repo root (one level up from client/)
+  // so VITE_* variables defined there are picked up by the client build.
+  envDir: '..',
   server: {
     port: 3000,
     // Proxy all /api calls to the Express backend during development

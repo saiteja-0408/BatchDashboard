@@ -15,15 +15,27 @@
  */
 function errorHandler(err, req, res, _next) {
   const status = err.status || err.statusCode || 500;
-  const isDev = process.env.NODE_ENV !== 'production';
+  const isDev  = process.env.NODE_ENV !== 'production';
 
   console.error(`[${new Date().toISOString()}] ${req.method} ${req.url} — ${err.message}`);
   if (isDev) console.error(err.stack);
 
+  // ERR-03: normalise Multer errors to proper 4xx HTTP status codes
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ success: false, error: { message: 'File too large — maximum upload size is 10 MB.' } });
+  }
+  if (err.code && err.code.startsWith('LIMIT_')) {
+    return res.status(400).json({ success: false, error: { message: `Multer upload error: ${err.message}` } });
+  }
+
+  // SEC-06: only expose internal error messages for client errors (4xx) or
+  // when err.expose is explicitly set; 5xx in production gets a generic message.
+  const exposeMessage = status < 500 || err.expose || isDev;
+
   res.status(status).json({
     success: false,
     error: {
-      message: err.message || 'Internal server error',
+      message: exposeMessage ? (err.message || 'Internal server error') : 'Internal server error',
       // Only include stack in development to avoid information disclosure
       ...(isDev && { stack: err.stack }),
     },

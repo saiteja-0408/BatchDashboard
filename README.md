@@ -60,14 +60,14 @@ BatchDashboardUI/
 │   │   ├── services/
 │   │   │   └── apiService.js        # Axios wrapper — fetchAllBatches, fetchCurrentTasks, fetchStatusReport, …
 │   │   └── utils/
-│   │       ├── constants.js         # API paths, VALID_SCHEDULE_NAMES Set, buildCommand, getScheduleFrequency
-│   │       └── helpers.js           # formatDate, compareValues, exportToExcel (CSV), copyToClipboard
+│   │       ├── constants.js         # API paths, buildQclientLine (shell-quoted, whitelisted), buildCommand
+│   │       └── helpers.js           # formatDate, compareValues, getRowStatus (killed>error>biz_error>OK), copyToClipboard
 ├── data/
 │   ├── batches.xlsx                 # Multi-sheet workbook used by tests (22 Benefits + 22 Tax rows)
 │   ├── benefits.xlsx                # Benefits data — loaded at server startup
 │   └── tax.xlsx                     # Tax data — loaded at server startup
-├── scripts/
-│   └── generateTestData.js          # Regenerates all three Excel files from VALID_SCHEDULE_NAMES
+├── data/
+│   └── regenerateData.js            # Regenerates all three Excel files from VALID_SCHEDULE_NAMES
 ├── tests/
 │   ├── scheduleParser.test.js               # 175 unit tests — all schedule name patterns
 │   ├── currentTasks.integration.test.js     # 10 integration tests — /api/current-tasks endpoint
@@ -81,7 +81,7 @@ BatchDashboardUI/
 
 ## Prerequisites
 
-- **Node.js ≥ 18** (tested on v18, v20, v22)
+- **Node.js ≥ 20.19 or ≥ 22.12** (required by Vite 8 — see `engines` in `package.json`)
 - **npm ≥ 9**
 
 ---
@@ -91,11 +91,8 @@ BatchDashboardUI/
 ### 1. Install dependencies
 
 ```bash
-# Root (server) dependencies
-npm install
-
-# Client dependencies
-cd client && npm install && cd ..
+# Install all dependencies at once (uses npm ci for reproducible installs)
+npm run install:all
 ```
 
 ### 2. Configure environment

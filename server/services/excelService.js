@@ -14,7 +14,8 @@
  *     in the store from an in-memory Buffer (used by the upload endpoint).
  */
 
-const fs = require('fs');
+const fs   = require('fs');
+const os   = require('os');
 const path = require('path');
 const { parseExcelFile, parseExcelBuffer } = require('../utils/fileParser');
 const { createBatch, validateBatch } = require('../models/batchModel');
@@ -117,8 +118,14 @@ async function loadFromFiles(benefitsPath, taxPath) {
   _store = [...benefitsResult.batches, ...taxResult.batches];
 
   try {
-    if (fs.existsSync(_benefitsPath)) _fileMtimes.benefits = fs.statSync(_benefitsPath).mtimeMs;
-    if (fs.existsSync(_taxPath))      _fileMtimes.tax      = fs.statSync(_taxPath).mtimeMs;
+    if (fs.existsSync(_benefitsPath)) {
+      const s = fs.statSync(_benefitsPath);
+      _fileMtimes.benefits = `${s.mtimeMs}:${s.size}`;
+    }
+    if (fs.existsSync(_taxPath)) {
+      const s = fs.statSync(_taxPath);
+      _fileMtimes.tax = `${s.mtimeMs}:${s.size}`;
+    }
   } catch {
     // Ignore stat failures
   }
@@ -131,6 +138,9 @@ async function loadFromFiles(benefitsPath, taxPath) {
 
 /**
  * Checks if on-disk files have changed and hot-syncs them into the store before serving requests.
+ * LOG-24: also forces a reload when mtime equals the stored value but size has changed,
+ * which covers the "replace with same mtime" edge case on FAT/NTFS or NFS mounts with
+ * coarse timestamp granularity. We combine mtime + size as the change fingerprint.
  * @param {'benefits'|'tax'} [sheetSource]
  */
 async function syncFromDisk(sheetSource) {
@@ -144,15 +154,16 @@ async function syncFromDisk(sheetSource) {
     const filePath = getTargetFilePath(src);
     try {
       if (fs.existsSync(filePath)) {
-        const mtime = fs.statSync(filePath).mtimeMs;
-        if (mtime > (_fileMtimes[src] || 0)) {
+        const stat  = fs.statSync(filePath);
+        const fingerprint = `${stat.mtimeMs}:${stat.size}`;
+        if (fingerprint !== (_fileMtimes[src] || '')) {
           const { batches } = await _parseToBatches(filePath, src);
           if (batches.length > 0) {
             _store = [
               ..._store.filter((b) => b.sheetSource !== src),
               ...batches,
             ];
-            _fileMtimes[src] = mtime;
+            _fileMtimes[src] = fingerprint;
             console.log(`[excelService] Hot-reloaded modified file for "${src}" from ${filePath} (${batches.length} rows).`);
           }
         }
@@ -240,16 +251,18 @@ function filter(filters) {
 
 /**
  * Computes summary statistics for the dashboard cards.
+ * LOG-22: invalid count is now computed from rows missing batchName or scheduleName.
  * @returns {Object}
  */
 function getSummary() {
   const total    = _store.length;
   const benefits = _store.filter((b) => b.sheetSource === 'benefits').length;
   const tax      = _store.filter((b) => b.sheetSource === 'tax').length;
+  const invalid  = _store.filter((b) => !b.batchName || !b.scheduleName).length;
 
   const bySheet = { Benefits: benefits, Tax: tax };
 
-  return { total, benefits, tax, invalid: 0, bySheet };
+  return { total, benefits, tax, invalid, bySheet };
 }
 
 /**
@@ -267,8 +280,25 @@ function getSummary() {
  * @param {Buffer} buffer - raw .xlsx/.xls file contents
  * @returns {Promise<{ count: number, warnings: string[] }>}
  */
+/**
+ * Serialised write queue — ensures concurrent uploads to the same or different
+ * sheet sources are never interleaved on disk (LOG-13).
+ */
+let _writeQueue = Promise.resolve();
+
 async function reloadSheet(sheetSource, buffer) {
   const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, sheetSource);
+
+  // LOG-14: assert batchName uniqueness within this sheet before committing to store
+  const seen = new Set();
+  const duplicates = [];
+  for (const b of batches) {
+    if (seen.has(b.batchName)) duplicates.push(b.batchName);
+    seen.add(b.batchName);
+  }
+  if (duplicates.length > 0) {
+    console.warn(`[excelService] Duplicate batchNames in uploaded "${sheetSource}" file: ${duplicates.join(', ')}`);
+  }
 
   // Ensure all incoming batches belong to the requested sheetSource and have the right logDir
   const incoming = batches.map((b) => ({
@@ -292,20 +322,27 @@ async function reloadSheet(sheetSource, buffer) {
     ...incoming,
   ];
 
-  // Persist uploaded buffer to configured target Excel file on disk (cross-platform path resolution)
-  try {
-    const targetFile = getTargetFilePath(sheetSource);
-    const targetDir = path.dirname(targetFile);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+  // LOG-12/LOG-13: atomic write (tmp → rename) serialised through _writeQueue
+  // so concurrent uploads never interleave or corrupt the target file.
+  _writeQueue = _writeQueue.then(async () => {
+    try {
+      const targetFile = getTargetFilePath(sheetSource);
+      const targetDir  = path.dirname(targetFile);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      // Write to a temp file first, then rename atomically
+      const tmpFile = path.join(os.tmpdir(), `batch_upload_${sheetSource}_${Date.now()}.tmp`);
+      fs.writeFileSync(tmpFile, buffer);
+      fs.renameSync(tmpFile, targetFile);
+      const s = fs.statSync(targetFile);
+      _fileMtimes[sheetSource] = `${s.mtimeMs}:${s.size}`;
+    } catch (fsErr) {
+      console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
     }
-    fs.writeFileSync(targetFile, buffer);
-    if (fs.existsSync(targetFile)) {
-      _fileMtimes[sheetSource] = fs.statSync(targetFile).mtimeMs;
-    }
-  } catch (fsErr) {
-    console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
-  }
+  });
+  // Fire-and-forget — do not block the HTTP response on the disk write
+  _writeQueue.catch((e) => console.warn(`[excelService] Write queue error: ${e.message}`));
 
   const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
   const tCount = _store.filter((b) => b.sheetSource === 'tax').length;

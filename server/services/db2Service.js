@@ -21,22 +21,33 @@
 
 'use strict';
 
-const { getDb2ConnectionString }        = require('../config/db2.config');
-const { getPool, getMissingPgVars }     = require('../config/pg.config');
-const { MOCK_STATUS_REPORT_ROWS }       = require('./mockData');
+const { getDb2ConnectionString }           = require('../config/db2.config');
+const { getPool, getMissingPgVars }        = require('../config/pg.config');
+const { getMockStatusReportRows }          = require('./mockData');
 
 const REQUIRED_DB2_VARS = ['DB2_HOST', 'DB2_DATABASE', 'DB2_USER', 'DB2_PASSWORD'];
 
 // ── Backend selection ────────────────────────────────────────────────────────
 
+/** Valid STATUS_REPORT_DB values. */
+const VALID_BACKENDS = new Set(['pg', 'db2']);
+
 /**
  * Returns the active backend: 'pg' | 'db2'.
- * Defaults to 'db2' when STATUS_REPORT_DB is absent or unrecognised.
+ * DEP-07: validates STATUS_REPORT_DB and warns when an unknown value is used
+ * rather than silently falling back to DB2, which could hide configuration errors.
  * @returns {'pg'|'db2'}
  */
 function getBackend() {
-  const val = (process.env.STATUS_REPORT_DB || 'db2').toLowerCase().trim();
-  return val === 'pg' ? 'pg' : 'db2';
+  const raw = (process.env.STATUS_REPORT_DB || 'db2').toLowerCase().trim();
+  if (!VALID_BACKENDS.has(raw)) {
+    console.warn(
+      `[db2Service] Unknown STATUS_REPORT_DB value "${process.env.STATUS_REPORT_DB}" — ` +
+      `valid values are: ${[...VALID_BACKENDS].join(', ')}. Defaulting to "db2".`
+    );
+    return 'db2';
+  }
+  return raw === 'pg' ? 'pg' : 'db2';
 }
 
 // ── Mock mode ────────────────────────────────────────────────────────────────
@@ -133,7 +144,8 @@ function logStartupMode() {
 async function queryDb2(sql, params = []) {
   // ── Mock mode ──────────────────────────────────────────────────────────────
   if (isMockMode()) {
-    return MOCK_STATUS_REPORT_ROWS;
+    // LOG-21: call getter so timestamps are always for today, not module load time
+    return getMockStatusReportRows();
   }
 
   const backend = getBackend();

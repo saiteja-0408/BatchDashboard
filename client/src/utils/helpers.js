@@ -68,12 +68,34 @@ export async function copyToClipboard(text) {
 
 /**
  * Helper to determine status string for a row.
- * Returns 'Biz Error', 'OK', or other string representation.
+ *
+ * LOG-01 fix: priority order is killed > system error > biz error > OK.
+ * The previous implementation returned 'OK' when `error_flag` or `killed_flag`
+ * were set because the flag check only looked at `biz_error_flag`.
+ *
  * @param {object} row
  * @returns {string}
  */
 export function getRowStatus(row) {
   if (!row) return '—';
+
+  const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
+
+  // Priority 1 — killed flag (highest severity)
+  if (isFlagTrue(row.killed_flag)) return 'Killed';
+
+  // Priority 2 — system error flag
+  if (isFlagTrue(row.error_flag) && !isFlagTrue(row.biz_error_flag)) return 'Error';
+
+  // Priority 3 — business error flag
+  if (
+    isFlagTrue(row.biz_error_flag) ||
+    isFlagTrue(row.biz_error) ||
+    isFlagTrue(row.bizError) ||
+    isFlagTrue(row.business_error_flag)
+  ) {
+    return 'Biz Error';
+  }
 
   // Check explicit status strings (with case-insensitive / variation support)
   const explicitStatus = row.status ?? row._status;
@@ -97,17 +119,6 @@ export function getRowStatus(row) {
     if (errLower.includes('biz error') || errLower.includes('business error') || errLower.includes('biz_error')) {
       return 'Biz Error';
     }
-  }
-
-  // Check flag fields (string, boolean, or number)
-  const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
-  if (
-    isFlagTrue(row.biz_error_flag) ||
-    isFlagTrue(row.biz_error) ||
-    isFlagTrue(row.bizError) ||
-    isFlagTrue(row.business_error_flag)
-  ) {
-    return 'Biz Error';
   }
 
   if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n' || row.biz_error === 'N' || row.biz_error === 'n') {

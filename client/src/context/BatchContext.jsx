@@ -30,9 +30,10 @@
  */
 
 import React, {
-  createContext, useContext, useState, useReducer, useCallback, useMemo,
+  createContext, useContext, useState, useReducer, useCallback, useMemo, useEffect, useRef,
 } from 'react';
 import PropTypes from 'prop-types';
+import { SHEET_SOURCES } from '../utils/constants';
 
 // ── Context objects ───────────────────────────────────────────────────────────
 
@@ -92,7 +93,9 @@ export function BatchProvider({ children }) {
   const [activeSheet, setActiveSheet] = useState(() => {
     try {
       const saved = sessionStorage.getItem(STORAGE_TAB_KEY) || localStorage.getItem(STORAGE_TAB_KEY);
-      return saved || DEFAULT_TAB;
+      // LOG-04: validate stored tab against known sheet sources; fall back if invalid
+      if (saved && SHEET_SOURCES.includes(saved)) return saved;
+      return DEFAULT_TAB;
     } catch {
       return DEFAULT_TAB;
     }
@@ -100,6 +103,16 @@ export function BatchProvider({ children }) {
 
   // ── Modal state via reducer (single dispatch = single render pass) ─────────
   const [modalState, dispatchModal] = useReducer(modalReducer, MODAL_INITIAL);
+
+  // ── LOG-03: timer ref so the close animation CLEAR dispatch is always
+  // cancelled before a new modal opens, preventing it from clearing freshly
+  // opened modal data if the user opens a second row within 300 ms.
+  const clearTimerRef = useRef(null);
+
+  // Clean up the timer when the provider unmounts
+  useEffect(() => () => {
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+  }, []);
 
   // ── Stable callbacks (data context) ───────────────────────────────────────
   const clearSearch = useCallback(() => setSearchQuery(''), []);
@@ -120,14 +133,25 @@ export function BatchProvider({ children }) {
   // reducer which lives in a separate context, so BatchTable does NOT re-render
   // when the modal opens.
   const openBatchModal = useCallback((batch) => {
+    // LOG-03: cancel any pending CLEAR dispatch from a previous close animation
+    if (clearTimerRef.current) {
+      clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
     dispatchModal({ type: 'OPEN', batch });
   }, []);
 
   // ── Stable callbacks (modal context) ──────────────────────────────────────
   const closeBatchModal = useCallback(() => {
     dispatchModal({ type: 'CLOSE' });
-    // Delay clearing selectedBatch so the modal close animation still sees data
-    setTimeout(() => dispatchModal({ type: 'CLEAR' }), 300);
+    // Delay clearing selectedBatch so the modal close animation still sees data.
+    // LOG-03: store the timer ID so it can be cancelled if another modal opens
+    // before the 300 ms animation completes.
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    clearTimerRef.current = setTimeout(() => {
+      clearTimerRef.current = null;
+      dispatchModal({ type: 'CLEAR' });
+    }, 300);
   }, []);
 
   // ── Memoised context values ────────────────────────────────────────────────

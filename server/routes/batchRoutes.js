@@ -18,13 +18,12 @@ const currentTasksController = require('../controllers/currentTasksController');
 const statusReportController = require('../controllers/statusReportController');
 const { asyncWrapper }       = require('../middlewares/errorHandler');
 
-const os = require('os');
-const path = require('path');
-
-// Multer memory storage with platform-safe memory buffer handling
+// SEC-04: reduced from 50 MB to 10 MB — a spreadsheet with 900 rows is never
+// more than a few hundred KB; 10 MB gives ample room for future growth without
+// buffering excessive payloads in memory.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits:  { fileSize: 50 * 1024 * 1024 }, // 50 MB max for universal file support
+  limits:  { fileSize: 10 * 1024 * 1024 }, // 10 MB max
 });
 
 const router = express.Router();

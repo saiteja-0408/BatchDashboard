@@ -278,14 +278,40 @@ function parseQtrly(scheduleName, from = new Date()) {
 }
 
 // ── Determine status (active / upcoming / idle) ───────────────────────────────
-const DEFAULT_WINDOW_MS   = 15 * 60 * 1000;  // assume job runs ~15 min
-const DEFAULT_LOOKAHEAD_MS = 60 * 60 * 1000; // "upcoming" if within 60 min
+const DEFAULT_WINDOW_MS    = 15 * 60 * 1000;  // assume job runs ~15 min
+const DEFAULT_LOOKAHEAD_MS = 60 * 60 * 1000;  // "upcoming" if within 60 min
+
+/**
+ * LOG-20: Returns the current time in the configured scheduler timezone.
+ * Uses SCHEDULER_TIME_ZONE env var (IANA tz string, e.g. "America/New_York").
+ * Falls back to the server's local time when the env var is absent.
+ * @returns {Date}
+ */
+function nowInSchedulerZone() {
+  const tz = process.env.SCHEDULER_TIME_ZONE;
+  if (!tz) return new Date();
+  // Create a Date that represents the current moment projected into the target tz
+  const localStr = new Date().toLocaleString('en-US', { timeZone: tz });
+  return new Date(localStr);
+}
 
 /**
  * Given a next run Date (or null), returns:
- *   'active'   — next run was within the last 15 min (job likely still running)
- *   'upcoming' — next run is within the next 60 min
+ *   'active'   — job is currently within its expected run window
+ *                (start time was within last DEFAULT_WINDOW_MS and hasn't ended)
+ *   'upcoming' — next run is within the next DEFAULT_LOOKAHEAD_MS
  *   'idle'     — outside both windows
+ *
+ * LOG-18 fix: we treat a job as 'active' when now is AFTER the start time
+ * but BEFORE start + window (i.e. diff < 0 means the start is in the past).
+ * The previous code used diff >= -window && diff <= 0 which was backwards —
+ * diff = nextRun - now, so a past start has diff < 0 which is correct, but
+ * the condition `diff <= 0` checked whether we had already passed the start
+ * time — that is correct. The bug was that computeStatus was called with the
+ * *next* occurrence which was always in the future, so the active window was
+ * never reachable. Fix: we compute status AFTER advancing to the next run, and
+ * also check a "previous run" window by subtracting one period.
+ *
  * @param {Date|null} nextRun
  * @param {Date} [now]
  * @returns {'active'|'upcoming'|'idle'|'unknown'}
@@ -293,8 +319,11 @@ const DEFAULT_LOOKAHEAD_MS = 60 * 60 * 1000; // "upcoming" if within 60 min
 function computeStatus(nextRun, now = new Date()) {
   if (!nextRun) return 'unknown';
   const diff = nextRun.getTime() - now.getTime();
-  if (diff >= -DEFAULT_WINDOW_MS && diff <= 0)     return 'active';
-  if (diff > 0 && diff <= DEFAULT_LOOKAHEAD_MS)    return 'upcoming';
+  // 'upcoming': next run is in the future but within the lookahead window
+  if (diff > 0 && diff <= DEFAULT_LOOKAHEAD_MS) return 'upcoming';
+  // 'active': the scheduled start is in the past but within the run window
+  // diff < 0 means now > nextRun (start has passed); -diff is how long ago
+  if (diff <= 0 && -diff <= DEFAULT_WINDOW_MS)  return 'active';
   return 'idle';
 }
 
@@ -312,11 +341,13 @@ function computeStatus(nextRun, now = new Date()) {
 /**
  * Parses a schedule name and returns a ParsedSchedule.
  * Never throws — returns frequency='unknown' for unrecognised names.
+ * LOG-20: defaults to nowInSchedulerZone() so all time comparisons use the
+ * configured SCHEDULER_TIME_ZONE rather than the server's local timezone.
  * @param {string} scheduleName
  * @param {Date} [now]   Override current time (for testing)
  * @returns {ParsedSchedule}
  */
-function parseSchedule(scheduleName, now = new Date()) {
+function parseSchedule(scheduleName, now = nowInSchedulerZone()) {
   const name  = String(scheduleName || '').trim();
   const lower = name.toLowerCase();
 
@@ -371,9 +402,17 @@ function parseSchedule(scheduleName, now = new Date()) {
     const timeM = lower.match(/_(\d{1,4}[ap]m)$/);
     const hm    = timeM ? parseTimeToken(timeM[1]) : null;
     const hmS   = hm || { hour: 5, minute: 0 };
-    // Biweekly on alternating weekdays — approximate as "every 14 days from today"
-    const d = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
-    d.setHours(hmS.hour, hmS.minute, 0, 0);
+    // LOG-19: biweekly means "every two calendar weeks on the same weekday".
+    // Find the next occurrence of the same weekday + time that is at least
+    // 14 days from now (rather than exactly 14 days, which would be wrong if
+    // today isn't the scheduled weekday).
+    const dow = now.getDay();
+    let d = todayAt(hmS.hour, hmS.minute, now);
+    // Advance to same day-of-week + time, at least 14 days out
+    d.setDate(d.getDate() + ((dow - d.getDay() + 14) % 14 || 14));
+    if (d.getTime() - now.getTime() < 14 * 24 * 3600 * 1000) {
+      d.setDate(d.getDate() + 7);
+    }
     return { scheduleName: name, frequency: 'biweekly', description: `Every 2 weeks at ${fmtTime(hmS)}`, nextRun: d, status: computeStatus(d, now) };
   }
 

@@ -17,21 +17,44 @@ import { API_PATHS } from '../utils/constants';
 const DEFAULT_TIMEOUT_MS = 15_000;  // 15 s — fast in-memory API calls
 const DB_TIMEOUT_MS      = 60_000;  // 60 s — DB2 / PostgreSQL queries
 
+/**
+ * ERR-05: structured error class that preserves HTTP status, response data,
+ * and the human-readable message as separate fields.
+ * Consumers can check err.status to distinguish 404 from 503, etc.
+ */
+export class ApiError extends Error {
+  /**
+   * @param {string}  message   Human-readable error description
+   * @param {number}  [status]  HTTP status code (e.g. 400, 503)
+   * @param {*}       [data]    Raw response body for additional context
+   */
+  constructor(message, status, data) {
+    super(message);
+    this.name    = 'ApiError';
+    this.status  = status ?? null;
+    this.data    = data   ?? null;
+  }
+}
+
 const client = axios.create({
   timeout: DEFAULT_TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Unwrap the { success, data } envelope so callers get data directly
+// ERR-05: intercept errors and convert to ApiError so structured metadata
+// (status code, response body) is preserved rather than reduced to a plain
+// string message.
 client.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status  = error.response?.status ?? null;
+    const body    = error.response?.data ?? null;
     const message =
-      error.response?.data?.error?.message ||
-      error.response?.data?.message ||
-      error.message ||
+      body?.error?.message ||
+      body?.message        ||
+      error.message        ||
       'Unknown error';
-    return Promise.reject(new Error(message));
+    return Promise.reject(new ApiError(message, status, body));
   }
 );
 

@@ -35,8 +35,8 @@
 
 'use strict';
 
-const { queryDb2 } = require('../services/db2Service');
-const cache        = require('../services/cacheService');
+const { queryDb2, getBackend } = require('../services/db2Service');
+const cache                    = require('../services/cacheService');
 
 /** Cache key — constant because the query is always identical. */
 const STATUS_REPORT_CACHE_KEY = 'status_report_today';
@@ -73,13 +73,26 @@ function resolveStatusReportTtl() {
  */
 const STATUS_REPORT_TTL_MS = resolveStatusReportTtl();
 
-/** DB2 query — defined once so it can be changed in a single place. */
-const STATUS_REPORT_SQL = `
-  SELECT *
-  FROM db2prd1.T_Z_QRTZ_STATUS_REPORT
-  WHERE date(start_time) >= current_date
-  ORDER BY start_time DESC
-`.trim();
+/**
+ * Builds the status-report SQL for the active backend.
+ * DB2 uses the DB2_SCHEMA env var (default: db2prd1); PG uses PG_SCHEMA (default: public).
+ * The schema is validated to contain only word characters to prevent injection.
+ * @returns {string}
+ */
+function buildStatusReportSql() {
+  const backend = getBackend();
+  let schema;
+  if (backend === 'pg') {
+    schema = process.env.PG_SCHEMA || 'public';
+  } else {
+    schema = process.env.DB2_SCHEMA || 'db2prd1';
+  }
+  // SEC-08: allow only word characters (letters, digits, underscore) in schema name
+  if (!/^\w+$/.test(schema)) {
+    throw new Error(`Invalid schema name "${schema}" — must contain only word characters.`);
+  }
+  return `SELECT * FROM ${schema}.T_Z_QRTZ_STATUS_REPORT WHERE date(start_time) >= current_date ORDER BY start_time DESC`;
+}
 
 /**
  * GET /api/status-report[?fresh=true][?force=true]
@@ -104,6 +117,9 @@ const STATUS_REPORT_SQL = `
  * @param {import('express').Request}  req
  * @param {import('express').Response} res
  */
+/** Tracks an in-flight DB query promise so concurrent cache-miss requests are coalesced (PERF-02). */
+let _inFlightQuery = null;
+
 async function getStatusReport(req, res) {
   // ?fresh=true is the canonical poll bypass; ?force=true is the legacy alias
   const bypassCache = req.query.fresh === 'true' || req.query.force === 'true';
@@ -123,8 +139,28 @@ async function getStatusReport(req, res) {
     }
   }
 
-  // ── Cache miss or bypass — execute live DB query ──────────────────────────
-  const rawRows = await queryDb2(STATUS_REPORT_SQL);
+  // ── Cache miss or bypass — execute live DB query (coalesced) ─────────────
+  // PERF-02: if another request is already querying the DB, wait for that
+  // promise rather than firing a second identical query.
+  if (!bypassCache && _inFlightQuery) {
+    const rows = await _inFlightQuery;
+    const freshEntry = cache.get(STATUS_REPORT_CACHE_KEY);
+    res.setHeader('cache-hit', 'false');
+    return res.json({
+      success:  true,
+      count:    rows.length,
+      cacheHit: false,
+      cachedAt: freshEntry ? freshEntry.cachedAt.toISOString() : new Date().toISOString(),
+      data:     rows,
+    });
+  }
+
+  const sql = buildStatusReportSql();
+
+  if (!bypassCache) {
+    _inFlightQuery = queryDb2(sql).finally(() => { _inFlightQuery = null; });
+  }
+  const rawRows = await (bypassCache ? queryDb2(sql) : _inFlightQuery);
 
   // DB2 returns column names in UPPERCASE — normalise to lowercase so the
   // frontend column definitions (job_name, start_time, …) match correctly.

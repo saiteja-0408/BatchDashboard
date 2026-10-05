@@ -18,16 +18,17 @@
 
 'use strict';
 
-const today = new Date();
-
 /**
  * Returns a Date string offset from today's midnight by the given hours/minutes.
+ * LOG-21: computes relative to `new Date()` at call time rather than at module
+ * load time, so mock timestamps always reflect the current day even in long-running
+ * server processes or test suites that run across midnight.
  * @param {number} h   — hours offset from midnight (can be negative = yesterday)
  * @param {number} [m=0] — minutes
  * @returns {string}   ISO timestamp string
  */
 function ts(h, m = 0) {
-  const d = new Date(today);
+  const d = new Date();
   d.setHours(0, 0, 0, 0);
   d.setHours(d.getHours() + h, d.getMinutes() + m);
   return d.toISOString();
@@ -50,7 +51,12 @@ function ts(h, m = 0) {
  *   parent_job_group: string|null
  * }>}
  */
-const MOCK_STATUS_REPORT_ROWS = [
+/**
+ * Returns fresh mock rows with timestamps computed at call time.
+ * LOG-21: exporting a getter function ensures callers always get today's timestamps.
+ */
+function getMockStatusReportRows() {
+  return [
   // ── Running now (no end_time yet) ───────────────────────────────────────────
   {
     job_name:         'BatchPayrollTaxCalc',
@@ -181,6 +187,13 @@ const MOCK_STATUS_REPORT_ROWS = [
     parent_job_name:  null,
     parent_job_group: null,
   },
-];
+  ];
+}
 
-module.exports = { MOCK_STATUS_REPORT_ROWS };
+/**
+ * @deprecated Use getMockStatusReportRows() to get fresh timestamps.
+ * Kept for backward compatibility with direct imports in tests.
+ */
+const MOCK_STATUS_REPORT_ROWS = getMockStatusReportRows();
+
+module.exports = { MOCK_STATUS_REPORT_ROWS, getMockStatusReportRows };

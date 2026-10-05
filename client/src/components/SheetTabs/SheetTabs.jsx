@@ -19,7 +19,7 @@ import { SHEET_SOURCES, SHEET_LABELS } from '../../utils/constants';
  */
 function BenefitsHandshakeIcon(props) {
   return (
-    <SvgIcon {...props} viewBox="0 0 32 20">
+    <SvgIcon {...props} viewBox="0 0 32 24">
       {/*
         Exact reproduction of the blue handshake glyph:
         - Rounded sleeve/cuff on the left

@@ -7,8 +7,13 @@
 /** Debounce delay (ms) applied to text-based filter/search inputs. */
 export const DEBOUNCE_MS = 350;
 
-// ── API base — Vite proxies /api to backend in dev ──────────────────────────
-export const API_BASE = '/api';
+// ── API base ─────────────────────────────────────────────────────────────────
+// DEP-03: Honour VITE_API_BASE_URL when set (e.g. for production absolute URLs).
+// In development Vite proxies /api to the backend, so the default '/api' works.
+const _apiBaseUrl =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
+  '';
+export const API_BASE = _apiBaseUrl ? `${_apiBaseUrl.replace(/\/$/, '')}/api` : '/api';
 
 export const API_PATHS = {
   batches:          `${API_BASE}/batches`,
@@ -123,18 +128,34 @@ export function buildCommand(batch, action) {
   return `${batch.logDir}\n${parts.join(' ')}`;
 }
 
+/** Allowed qclient action values — whitelist to prevent injection (SEC-02). */
+const ALLOWED_QCLIENT_ACTIONS = new Set(['runJobOnly', 'resumeJob']);
+
+/**
+ * Shell-quotes a token to prevent argument injection (SEC-02).
+ * Wraps in single quotes and escapes any embedded single quotes.
+ * @param {string} s
+ * @returns {string}
+ */
+function shQuote(s) {
+  return `'${String(s).replace(/'/g, "'\\''")}'`;
+}
+
 /**
  * Builds only the qclient.sh invocation line (without the cd prefix).
- * Used when the cd command is displayed separately as Option 1.
+ * SEC-02: all variable tokens are shell-quoted; action is validated against a whitelist.
  *
  * @param {Object} batch
  * @param {'runJobOnly'|'resumeJob'} action
  * @returns {string}
  */
 export function buildQclientLine(batch, action) {
-  const parts = ['sudo', './qclient.sh', action, batch.batchName, batch.scheduleName];
+  if (!ALLOWED_QCLIENT_ACTIONS.has(action)) {
+    throw new Error(`Invalid qclient action: "${action}". Must be one of: ${[...ALLOWED_QCLIENT_ACTIONS].join(', ')}`);
+  }
+  const parts = ['sudo', './qclient.sh', action, shQuote(batch.batchName), shQuote(batch.scheduleName)];
   if (batch.arguments && batch.arguments.trim()) {
-    parts.push(`"${batch.arguments.trim()}"`);
+    parts.push(shQuote(batch.arguments.trim()));
   }
   return parts.join(' ');
 }

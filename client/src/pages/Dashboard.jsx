@@ -18,6 +18,7 @@ import RefreshIcon      from '@mui/icons-material/Refresh';
 import UploadFileIcon   from '@mui/icons-material/UploadFile';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { AppHeader }        from '../components/AppHeader/AppHeader';
 import { SheetTabs }        from '../components/SheetTabs/SheetTabs';
 import { SearchBar }        from '../components/SearchBar/SearchBar';
 import { BatchTable }       from '../components/BatchTable/BatchTable';
@@ -27,6 +28,8 @@ import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab'
 import { useBatchContext }   from '../context/BatchContext';
 import { useAllBatches }     from '../hooks/useBatches';
 import { uploadSheet }       from '../services/apiService';
+// ARCH-01: StatusReportTab owns its useStatusReport call; Dashboard only
+// subscribes to share the same React Query cache entry for refresh + metadata.
 import { useStatusReport }   from '../hooks/useStatusReport';
 
 export default function Dashboard() {
@@ -122,10 +125,13 @@ export default function Dashboard() {
   }, []);
 
   return (
-    /*
+    <>
+    {/* DEAD-01: AppHeader is mounted here — sticky top bar with dark mode toggle */}
+    <AppHeader />
+    {/*
      * maxWidth={false} — fills the full viewport width at every screen size.
      * py/px props provide the only inset; no centred-column cap is applied.
-     */
+     */}
     <Container
       maxWidth={false}
       sx={{
@@ -250,5 +256,6 @@ export default function Dashboard() {
         </Alert>
       </Snackbar>
     </Container>
+    </>
   );
 }

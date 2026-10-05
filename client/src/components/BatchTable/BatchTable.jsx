@@ -51,10 +51,13 @@ const VIRTUAL_ROW_HEIGHT = 44; // Fixed height in px per desktop row
 const OVERSCAN_COUNT = 5;      // Number of extra rows to render above and below viewport
 
 /**
- * Feature flag — flip to `true` to restore the Current Task column.
- * When false: no API polling, no column header, no cell rendering.
+ * DEAD-05 / SHOW_CURRENT_TASK: driven by an env var so it can be toggled without
+ * a code change. Set VITE_SHOW_CURRENT_TASK=true in .env to re-enable the column.
+ * Defaults to false (column hidden) to avoid unnecessary polling.
  */
-const SHOW_CURRENT_TASK = false;
+const SHOW_CURRENT_TASK =
+  typeof import.meta !== 'undefined' &&
+  import.meta.env?.VITE_SHOW_CURRENT_TASK === 'true';
 
 /**
  * Small chip that shows Y (green) or N (red) for Trigger Needed.
@@ -266,6 +269,13 @@ export function BatchTable({ batches, isLoading, isError }) {
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
+
+  // LOG-07: reset scroll to top whenever the sorted/filtered data changes so the
+  // virtual window recalculates from index 0 and avoids phantom spacer rows.
+  useEffect(() => {
+    setScrollTop(0);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+  }, [sortedData]);
 
   const handleScroll = useCallback((e) => {
     setScrollTop(e.currentTarget.scrollTop);

@@ -116,18 +116,23 @@ Section.propTypes = {
 export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   if (!batch) return null;
 
-  const domain = batch.sheetSource; // 'benefits' | 'tax'
+  // LOG-02: hard guard — do not attempt to build commands without a scheduleName.
+  // Rendering the qclient line with an empty scheduleName produces a malformed
+  // command that could mislead the operator. Show a clear error instead.
+  if (!batch.scheduleName) {
+    return (
+      <Alert severity="error" sx={{ fontSize: '0.82rem' }}>
+        No schedule name found for this batch — commands cannot be constructed.
+        Please ensure the Excel file contains a Schedule Name / Job Group for this batch.
+      </Alert>
+    );
+  }
+
+  const domain  = batch.sheetSource; // 'benefits' | 'tax'
   const logDefs = LOG_PATH_DEFS[domain] ?? [];
 
   return (
     <Stack spacing={0} divider={<Divider sx={{ my: 2 }} />}>
-
-      {/* ── Missing Schedule Alert ── */}
-      {!batch.scheduleName && (
-        <Alert severity="error" sx={{ fontSize: '0.82rem' }}>
-          No schedule name found for this batch — commands cannot be constructed.
-        </Alert>
-      )}
 
       {/* ── Change Directory ── */}
       <Section title="Change Directory">

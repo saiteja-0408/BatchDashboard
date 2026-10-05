@@ -27,13 +27,39 @@ const { logStartupMode }       = require('./services/db2Service');
 const app  = express();
 const PORT = process.env.PORT || 4000;
 
+// ERR-04: track whether bootstrap completed successfully so the health check
+// reflects the actual server readiness rather than always returning "ok".
+let _bootstrapOk = false;
+
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors());
+// SEC-05: restrict CORS to known origins.
+// In development CORS_ORIGIN is typically not set — allow the Vite dev server.
+// In production set CORS_ORIGIN to the exact client URL (e.g. https://dashboard.example.com).
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+  : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (same-origin, curl, Postman, server-to-server)
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error(`CORS: origin "${origin}" not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+// ERR-04: report bootstrap status so load balancers / k8s probes can distinguish
+// "server started but data not loaded" from "fully operational".
+app.get('/health', (_req, res) => {
+  if (!_bootstrapOk) {
+    return res.status(503).json({ status: 'starting', ts: new Date().toISOString() });
+  }
+  return res.json({ status: 'ok', ts: new Date().toISOString() });
+});
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api', batchRoutes);
@@ -72,9 +98,11 @@ async function bootstrap() {
   try {
     const { count } = await excelService.loadFromFiles(benefitsPath, taxPath);
     console.log(`[startup] Loaded ${count} batch(es) from benefits & tax files`);
+    _bootstrapOk = true;
   } catch (err) {
     console.error(`[startup] Failed to load Excel files: ${err.message}`);
     console.warn('[startup] Server starting with empty batch store.');
+    // _bootstrapOk remains false — health check will report 503 until a successful reload
   }
 
   // Log DB2 / mock mode so the operator can see at a glance which data source is active
