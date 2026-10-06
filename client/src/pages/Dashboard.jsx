@@ -59,7 +59,12 @@ export default function Dashboard() {
   );
 
   /**
-   * Client-side search applied on the already-fetched batch list.
+   * Client-side search applied on the full already-fetched batch list.
+   * Operates on allBatches (the entire sheet dataset) — never on the virtual
+   * scroll window — guaranteeing 100% search accuracy across all rows.
+   *
+   * Fields searched: batchName, scheduleName, arguments, triggerNeeded.
+   * Aligns with the server-side excelService.search() field set.
    * Not used when the Status Report tab is active.
    */
   const filteredBatches = useMemo(() => {
@@ -67,14 +72,15 @@ export default function Dashboard() {
 
     if (!searchQuery) return allBatches;
 
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return allBatches;
+
     return allBatches.filter((b) =>
-      // Guard all three fields with (|| '') so a null/undefined scheduleName or
-      // batchName never throws "Cannot read properties of null (reading 'toLowerCase')",
-      // which would silently break the filter and leave the table empty/frozen.
-      (b.batchName    || '').toLowerCase().includes(q) ||
-      (b.scheduleName || '').toLowerCase().includes(q) ||
-      (b.arguments    || '').toLowerCase().includes(q)
+      // Guard every field with (|| '') — null/undefined never throws TypeError.
+      (b.batchName     || '').toLowerCase().includes(q) ||
+      (b.scheduleName  || '').toLowerCase().includes(q) ||
+      (b.arguments     || '').toLowerCase().includes(q) ||
+      (b.triggerNeeded || '').toLowerCase().includes(q)
     );
   }, [allBatches, searchQuery, isStatusReportTab]);
 

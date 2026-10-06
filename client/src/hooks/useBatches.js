@@ -39,8 +39,11 @@ export function useAllBatches(sheet) {
     enabled:   sheet !== null && sheet !== undefined,
     select:    (allData) => {
       if (!allData || !Array.isArray(allData)) return [];
-      if (!sheet) return allData;
-      return allData.filter((b) => b.sheetSource === sheet);
+      const result = sheet ? allData.filter((b) => b.sheetSource === sheet) : allData;
+      // Log full dataset size on every select so the 1000-row requirement can be
+      // verified in the browser console: "Batches loaded: N (sheet: benefits|tax)"
+      console.log(`[useAllBatches] Batches loaded: ${result.length} (sheet: ${sheet ?? 'all'})`);
+      return result;
     },
   });
 }
