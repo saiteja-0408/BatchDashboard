@@ -253,7 +253,13 @@ function compareRowsByColumn(a, b, colId, direction) {
 }
 
 /**
- * Cycles the sort direction for a column:
+ * Cycles the sort direction for a column.
+ *
+ * _status column — two-state toggle (asc → reset):
+ *   Click 1: no sort  → asc  (Batch Failed / Biz Error bubble to top)
+ *   Click 2: asc      → null (back to original server order)
+ *
+ * All other columns — three-state cycle:
  *   none → asc → desc → none
  *
  * @param {{ key: string, direction: 'asc'|'desc' } | null} current
@@ -261,9 +267,14 @@ function compareRowsByColumn(a, b, colId, direction) {
  * @returns {{ key: string, direction: 'asc'|'desc' } | null}
  */
 function nextSortConfig(current, colId) {
+  // _status: toggle between priority-sort and original order (no desc step)
+  if (colId === '_status') {
+    if (!current || current.key !== colId) return { key: colId, direction: 'asc' };
+    return null; // asc → reset
+  }
+  // All other columns: none → asc → desc → none
   if (!current || current.key !== colId) return { key: colId, direction: 'asc' };
   if (current.direction === 'asc')       return { key: colId, direction: 'desc' };
-  // desc → reset (no sort)
   return null;
 }
 
