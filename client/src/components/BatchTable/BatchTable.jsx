@@ -240,6 +240,24 @@ export function BatchTable({ batches, isLoading, isError }) {
   const [tableHeight, setTableHeight] = useState(500);
   const [scrollTop, setScrollTop]     = useState(0);
 
+  const { sortedData, sortConfig, requestSort: _requestSort } = useSort(batches, activeSheet);
+
+  /**
+   * Reset scroll to top whenever the batches prop changes identity.
+   * This covers three scenarios that all produce the blank-gap artifact:
+   *   1. Tab switch (Benefits ↔ Tax) — new array reference from useAllBatches select
+   *   2. Search query change — filteredBatches is a new array each time
+   *   3. Upload / refresh — invalidated cache delivers a fresh array
+   *
+   * Without this reset the TableContainer DOM node retains its previous
+   * scrollTop offset while the virtual window recalculates padding from 0,
+   * producing a blank region at the top equal to the old scroll offset.
+   */
+  useEffect(() => {
+    setScrollTop(0);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+  }, [batches]);
+
   /**
    * Wraps requestSort and resets the scroll position to the top before the
    * sorted data is rendered. Without this, the virtualization window retains
@@ -247,7 +265,6 @@ export function BatchTable({ batches, isLoading, isError }) {
    * the paddingTop spacer <TableRow> to appear as a phantom blank row in the
    * visible area — which is the "row added on header click" bug.
    */
-  const { sortedData, sortConfig, requestSort: _requestSort } = useSort(batches, activeSheet);
   const requestSort = useCallback((colId) => {
     // Reset scroll state first so the virtual window recalculates from index 0
     setScrollTop(0);
