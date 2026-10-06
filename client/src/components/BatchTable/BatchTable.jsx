@@ -1,10 +1,14 @@
 /**
- * BatchTable.jsx — sortable, clickable batch data table.
+ * BatchTable.jsx — clickable batch data table (Benefits & Tax sheets).
  *
- * Columns: [warn] Batch Name | Schedule Name | Arguments
+ * Columns: Batch Name | Schedule Name | Arguments | Trigger Needed
  *
  * The "Sheet" column has been removed — the active tab already indicates
  * which sheet is displayed.
+ *
+ * Sorting is intentionally disabled on column headers for the Benefits and
+ * Tax sheets. Headers are plain, non-interactive labels with no onClick,
+ * no sort icons, and no sort state bindings.
  *
  * Current Task column is hidden but fully preserved. To re-enable it, flip:
  *   const SHOW_CURRENT_TASK = true;
@@ -17,7 +21,6 @@
  *   - BatchRow is React.memo'd — large lists (800+ rows) avoid full re-renders
  *     on every 60s current-tasks poll by only updating rows whose currentTask changed.
  *   - currentTaskMap is memoised.
- *   - sortedData is memoised inside useSort.
  *   - openBatchModal is stable useCallback from context.
  */
 
@@ -25,11 +28,10 @@ import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import PropTypes from 'prop-types';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TableSortLabel, Paper, Typography, Box, Chip, Card, CardContent,
+  Paper, Typography, Box, Chip, Card, CardContent,
   CardActionArea, Skeleton, Stack, Tooltip, useMediaQuery, useTheme,
 } from '@mui/material';
 import { useBatchContext }    from '../../context/BatchContext';
-import { useSort }            from '../../hooks/useSort';
 import { useCurrentTasks }    from '../../hooks/useBatches';
 import { CurrentTaskBadge }   from '../CurrentTaskBadge/CurrentTaskBadge';
 import { SORTABLE_COLUMNS }   from '../../utils/constants';
@@ -240,12 +242,13 @@ export function BatchTable({ batches, isLoading, isError }) {
   const [tableHeight, setTableHeight] = useState(500);
   const [scrollTop, setScrollTop]     = useState(0);
 
-  const { sortedData, sortConfig, requestSort: _requestSort } = useSort(batches, activeSheet);
+  // Sorting is disabled on Benefits/Tax headers. Display order is the server/upload order.
+  const sortedData = batches ?? [];
 
   /**
    * Reset scroll to top whenever the batches prop changes identity.
    * This covers three scenarios that all produce the blank-gap artifact:
-   *   1. Tab switch (Benefits ↔ Tax) — new array reference from useAllBatches select
+   *   1. Tab switch (Benefits <-> Tax) — new array reference from useAllBatches select
    *   2. Search query change — filteredBatches is a new array each time
    *   3. Upload / refresh — invalidated cache delivers a fresh array
    *
@@ -257,20 +260,6 @@ export function BatchTable({ batches, isLoading, isError }) {
     setScrollTop(0);
     if (containerRef.current) containerRef.current.scrollTop = 0;
   }, [batches]);
-
-  /**
-   * Wraps requestSort and resets the scroll position to the top before the
-   * sorted data is rendered. Without this, the virtualization window retains
-   * its previous scrollTop offset against the newly-reordered array, causing
-   * the paddingTop spacer <TableRow> to appear as a phantom blank row in the
-   * visible area — which is the "row added on header click" bug.
-   */
-  const requestSort = useCallback((colId) => {
-    // Reset scroll state first so the virtual window recalculates from index 0
-    setScrollTop(0);
-    if (containerRef.current) containerRef.current.scrollTop = 0;
-    _requestSort(colId);
-  }, [_requestSort]);
 
   useEffect(() => {
     /** Recalculates the container height to fill the visible viewport area. */
@@ -298,8 +287,7 @@ export function BatchTable({ batches, isLoading, isError }) {
   const paddingTop    = startIndex * VIRTUAL_ROW_HEIGHT;
   const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
 
-  // Number of columns rendered — used for colSpan on virtual spacer rows so it
-  // always matches the actual column count rather than a hardcoded magic number.
+  // Column count for colSpan on virtual spacer rows.
   const columnCount = SORTABLE_COLUMNS.length + (SHOW_CURRENT_TASK ? 1 : 0);
 
   const visibleBatches = useMemo(
@@ -379,23 +367,14 @@ export function BatchTable({ batches, isLoading, isError }) {
             {SORTABLE_COLUMNS.map((col) => (
               <TableCell
                 key={col.id}
-                sortDirection={sortConfig?.key === col.id ? sortConfig.direction : false}
                 sx={{
                   whiteSpace: 'nowrap',
                   fontWeight: 700,
                   fontSize: { md: '0.8rem', xl: '0.875rem' },
-                  cursor: 'pointer',
-                  userSelect: 'none',
                   backgroundColor: 'background.paper',
                 }}
-                onClick={() => requestSort(col.id)}
               >
-                <TableSortLabel
-                  active={sortConfig?.key === col.id}
-                  direction={sortConfig?.key === col.id ? sortConfig.direction : 'asc'}
-                >
-                  {col.label}
-                </TableSortLabel>
+                {col.label}
               </TableCell>
             ))}
             {SHOW_CURRENT_TASK && (
