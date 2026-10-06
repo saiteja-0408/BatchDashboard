@@ -63,9 +63,18 @@ const COLUMNS = [
 
 // ── StatusChip ────────────────────────────────────────────────────────────────
 
-/** Status chip derived from biz_error_flag / row status. */
+/** Status chip derived from error_flag / biz_error_flag / row status. */
 function StatusChip({ row }) {
   const statusStr = getRowStatus(row);
+  if (statusStr === 'Batch Failed') {
+    return (
+      <Chip
+        label="Batch Failed"
+        size="small"
+        sx={{ bgcolor: '#d32f2f', color: '#fff', fontWeight: 700, fontSize: '0.72rem' }}
+      />
+    );
+  }
   if (statusStr === 'Biz Error') {
     return (
       <Chip
@@ -192,13 +201,28 @@ export function formatCell(value, colId) {
  * @returns {number}
  */
 function compareRowsByColumn(a, b, colId, direction) {
-  // _status column: Biz Errors sort before all other statuses
+  // _status column: Batch Failed first, Biz Error second, everything else last
   if (colId === '_status') {
     const statusA = getRowStatus(a);
     const statusB = getRowStatus(b);
-    const bizA = statusA === 'Biz Error' ? 0 : 1;
-    const bizB = statusB === 'Biz Error' ? 0 : 1;
-    if (bizA !== bizB) return direction === 'asc' ? bizA - bizB : bizB - bizA;
+
+    // Assign a sort priority bucket: lower number = higher priority
+    const priorityOf = (s) => {
+      if (s === 'Batch Failed') return 0;
+      if (s === 'Biz Error')    return 1;
+      return 2;
+    };
+
+    const pa = priorityOf(statusA);
+    const pb = priorityOf(statusB);
+
+    // Different priority buckets — order is always "Batch Failed → Biz Error → rest"
+    // regardless of asc/desc so that critical rows are always surfaced at the top.
+    if (pa !== pb) return direction === 'asc' ? pa - pb : pb - pa;
+
+    // Same priority bucket — for "Batch Failed" preserve stable (arrival) order;
+    // for all other buckets, fall through to a secondary alphabetical compare.
+    if (pa === 0) return 0; // stable: keep original relative order for failed rows
     return compareValues(statusA, statusB, direction);
   }
 
@@ -323,10 +347,16 @@ export function StatusReportTab({ enabled }) {
       const statusStr = getRowStatus(row);
       if (statusStr && statusStr.toLowerCase().includes(q)) return true;
 
-      // 3. Semantic Biz Error synonyms
+      // 3. Semantic status synonyms
       if (
-        (q === 'biz error' || q === 'biz' || q === 'business error' || q === 'error') &&
+        (q === 'biz error' || q === 'biz' || q === 'business error') &&
         statusStr === 'Biz Error'
+      ) {
+        return true;
+      }
+      if (
+        (q === 'batch failed' || q === 'failed' || q === 'error' || q === 'batch fail') &&
+        statusStr === 'Batch Failed'
       ) {
         return true;
       }
@@ -519,7 +549,9 @@ export function StatusReportTab({ enabled }) {
 
               {/* Visible data rows */}
               {!isFetching && visibleRows.map((row, idx) => {
-                const isBizError = getRowStatus(row) === 'Biz Error';
+                const rowStatus    = getRowStatus(row);
+                const isBatchFailed = rowStatus === 'Batch Failed';
+                const isBizError    = rowStatus === 'Biz Error';
                 // Use absolute index for stable key during virtualized scrolling
                 const absoluteIdx = startIndex + idx;
                 return (
@@ -527,9 +559,17 @@ export function StatusReportTab({ enabled }) {
                     key={absoluteIdx}
                     hover
                     sx={{
-                      backgroundColor: isBizError ? '#fff3e0 !important' : 'inherit',
+                      backgroundColor: isBatchFailed
+                        ? '#ffebee !important'
+                        : isBizError
+                          ? '#fff3e0 !important'
+                          : 'inherit',
                       '&:hover': {
-                        backgroundColor: isBizError ? '#ffe0b2 !important' : undefined,
+                        backgroundColor: isBatchFailed
+                          ? '#ffcdd2 !important'
+                          : isBizError
+                            ? '#ffe0b2 !important'
+                            : undefined,
                       },
                     }}
                   >

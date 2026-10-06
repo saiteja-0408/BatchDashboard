@@ -68,12 +68,35 @@ export async function copyToClipboard(text) {
 
 /**
  * Helper to determine status string for a row.
- * Returns 'Biz Error', 'OK', or other string representation.
+ *
+ * Priority evaluation order:
+ *   1. error_flag = 'Y' (case-insensitive)  → "Batch Failed"
+ *   2. biz_error_flag truthy                → "Biz Error"
+ *   3. Default / standard mapping           → "OK", explicit status string, or '—'
+ *
  * @param {object} row
  * @returns {string}
  */
 export function getRowStatus(row) {
   if (!row) return '—';
+
+  // ── Priority 1: error_flag = 'Y' → Batch Failed ──────────────────────────
+  const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
+  if (isFlagTrue(row.error_flag)) {
+    return 'Batch Failed';
+  }
+
+  // ── Priority 2: biz_error_flag truthy → Biz Error ────────────────────────
+  if (
+    isFlagTrue(row.biz_error_flag) ||
+    isFlagTrue(row.biz_error) ||
+    isFlagTrue(row.bizError) ||
+    isFlagTrue(row.business_error_flag)
+  ) {
+    return 'Biz Error';
+  }
+
+  // ── Priority 3: default / standard mapping ────────────────────────────────
 
   // Check explicit status strings (with case-insensitive / variation support)
   const explicitStatus = row.status ?? row._status;
@@ -81,6 +104,9 @@ export function getRowStatus(row) {
     const s = explicitStatus.trim().toLowerCase();
     if (s === 'biz error' || s === 'biz_error' || s === 'business error' || s === 'business_error') {
       return 'Biz Error';
+    }
+    if (s === 'batch failed' || s === 'batch_failed' || s === 'failed') {
+      return 'Batch Failed';
     }
     if (s === 'ok' || s === 'success' || s === 'complete' || s === 'completed') {
       return 'OK';
@@ -99,17 +125,6 @@ export function getRowStatus(row) {
     }
   }
 
-  // Check flag fields (string, boolean, or number)
-  const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
-  if (
-    isFlagTrue(row.biz_error_flag) ||
-    isFlagTrue(row.biz_error) ||
-    isFlagTrue(row.bizError) ||
-    isFlagTrue(row.business_error_flag)
-  ) {
-    return 'Biz Error';
-  }
-
   if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n' || row.biz_error === 'N' || row.biz_error === 'n') {
     return 'OK';
   }
@@ -118,33 +133,40 @@ export function getRowStatus(row) {
 }
 
 /**
- * Sorts status report rows prioritizing Biz Error.
+ * Sorts status report rows with the prioritized status ordering:
+ *   1. "Batch Failed" rows first (stable — original arrival order preserved)
+ *   2. "Biz Error" rows next (stable)
+ *   3. All remaining statuses in their original order
+ *
  * Mode:
- *   'biz_top' / 'biz_top_asc' : Biz Errors top in original order, others in original order
- *   'default'                 : Original order (unmodified)
+ *   'priority_top' / 'biz_top' / 'biz_top_asc' : apply priority order
+ *   'priority_top_desc' / 'biz_top_desc'        : priority order, others reversed
+ *   'default'                                   : original order (unmodified)
+ *
  * @param {Array<object>} rows
- * @param {'default'|'biz_top'|'biz_top_asc'|'biz_top_desc'} sortOrder
+ * @param {'default'|'priority_top'|'biz_top'|'biz_top_asc'|'priority_top_desc'|'biz_top_desc'} sortOrder
  * @returns {Array<object>}
  */
 export function sortStatusRows(rows, sortOrder) {
   if (!rows || rows.length === 0 || !sortOrder || sortOrder === 'default') {
     return rows;
   }
-  const bizErrors = [];
-  const others = [];
+  const batchFailed = [];
+  const bizErrors   = [];
+  const others      = [];
 
   rows.forEach((row) => {
-    if (getRowStatus(row) === 'Biz Error') {
+    const status = getRowStatus(row);
+    if (status === 'Batch Failed') {
+      batchFailed.push(row);
+    } else if (status === 'Biz Error') {
       bizErrors.push(row);
     } else {
       others.push(row);
     }
   });
 
-  if (sortOrder === 'biz_top_desc') {
-    return [...bizErrors, ...[...others].reverse()];
-  }
-
-  // 'biz_top' / 'biz_top_asc'
-  return [...bizErrors, ...others];
+  const isDesc = sortOrder === 'priority_top_desc' || sortOrder === 'biz_top_desc';
+  const tail = isDesc ? [...others].reverse() : others;
+  return [...batchFailed, ...bizErrors, ...tail];
 }
