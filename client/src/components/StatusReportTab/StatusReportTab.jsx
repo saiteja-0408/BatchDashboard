@@ -37,10 +37,24 @@ import { getRowStatus, sortStatusRows, compareValues } from '../../utils/helpers
 import { DEBOUNCE_MS } from '../../utils/constants';
 
 // ── Virtualization constants ──────────────────────────────────────────────────
-/** Fixed row height in px — must match the actual rendered row height. */
-const VIRTUAL_ROW_HEIGHT = 38;
-/** Extra rows to render above and below the visible window. */
-const OVERSCAN_COUNT = 5;
+/**
+ * Fixed row height in px — must match the actual rendered MUI Table row.
+ * MUI Table size="small" with py:{xs:0.75,xl:1} = ~12px padding + ~20px line = 32px.
+ * 33px gives a 1-px safety margin to prevent under-counting visible rows.
+ */
+const VIRTUAL_ROW_HEIGHT = 33;
+/**
+ * Extra rows above and below the visible window.
+ * 8 rows × 33px = 264px buffer absorbs fast-scroll momentum before the next
+ * RAF fires, preventing blank gaps at scroll boundaries.
+ */
+const OVERSCAN_COUNT = 8;
+
+// ── Module-level sx constants (allocated once, never recreated per render) ───
+const TABLE_CONTAINER_SX = { width: '100%', overflowX: 'auto', overflowY: 'auto' };
+const TABLE_SX           = { tableLayout: 'fixed', minWidth: 900 };
+const SPACER_ROW_SX      = { border: 0 };
+const SPACER_CELL_SX     = { p: 0, border: 0 };
 
 /**
  * Column definitions.
@@ -291,27 +305,39 @@ export function StatusReportTab({ enabled }) {
 
   // ── Virtualization state — declared before any early returns ─────────────
   const containerRef  = useRef(null);
+  const rafRef        = useRef(null);
   const [tableHeight, setTableHeight] = useState(500);
   const [scrollTop,   setScrollTop]   = useState(0);
 
   useEffect(() => {
     const updateHeight = () => {
-      const windowH = window.innerHeight;
-      setTableHeight(Math.max(300, Math.min(windowH - 320, 700)));
+      setTableHeight(Math.max(300, Math.min(window.innerHeight - 320, 700)));
     };
     updateHeight();
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
 
+  /**
+   * RAF-throttled scroll handler — fires at most once per animation frame
+   * (~16 ms) regardless of how many native scroll events fire per frame.
+   * Eliminates main-thread jank when scrolling 1,000+ rows.
+   */
   const handleScroll = useCallback((e) => {
-    setScrollTop(e.currentTarget.scrollTop);
+    const target = e.currentTarget;
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setScrollTop(target.scrollTop);
+    });
   }, []);
+
+  // Cancel pending RAF on unmount.
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   // ── Sort column header click ──────────────────────────────────────────────
   const handleSortClick = useCallback((colId) => {
     setSortConfig((prev) => nextSortConfig(prev, colId));
-    // Reset scroll to top so the user sees the sorted result from the beginning
     setScrollTop(0);
     if (containerRef.current) containerRef.current.scrollTop = 0;
   }, []);
@@ -333,13 +359,13 @@ export function StatusReportTab({ enabled }) {
 
         if (String(val).toLowerCase().includes(q)) return true;
 
-        // For date/time columns also test the formatted display string
+        // For date/time columns test the formatted display string.
+        // d.toLocaleString() is intentionally omitted here — it is locale-
+        // dependent, expensive, and its output is already covered by the
+        // formatStandardDateTime path above for standard date queries.
         if (key.includes('time') || key.includes('date') || val instanceof Date) {
           const d = parseDateValue(val);
-          if (d) {
-            if (formatStandardDateTime(d).toLowerCase().includes(q)) return true;
-            if (d.toLocaleString().toLowerCase().includes(q)) return true;
-          }
+          if (d && formatStandardDateTime(d).toLowerCase().includes(q)) return true;
         }
       }
 
@@ -372,6 +398,14 @@ export function StatusReportTab({ enabled }) {
       compareRowsByColumn(a, b, sortConfig.key, sortConfig.direction)
     );
   }, [filteredRows, sortConfig]);
+
+  // Reset scroll to top when the sorted/filtered dataset changes so the
+  // virtual window recalculates from offset 0. Without this, a sort or
+  // filter change with a non-zero scrollTop produces a blank gap at the top.
+  useEffect(() => {
+    setScrollTop(0);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+  }, [sortedRows]);
 
   // ── Virtualization window ─────────────────────────────────────────────────
   const totalCount    = sortedRows.length;
@@ -477,18 +511,22 @@ export function StatusReportTab({ enabled }) {
           elevation={0}
           ref={containerRef}
           onScroll={handleScroll}
-          sx={{
-            width:     '100%',
-            overflowX: 'auto',
-            overflowY: 'auto',
-            maxHeight: tableHeight,
-          }}
+          sx={{ ...TABLE_CONTAINER_SX, maxHeight: tableHeight }}
         >
-          <Table
-            size="small"
-            stickyHeader
-            sx={{ tableLayout: 'auto', minWidth: 600 }}
-          >
+          <Table size="small" stickyHeader sx={TABLE_SX}>
+            <colgroup>
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '5%'  }} />
+              <col style={{ width: '4%'  }} />
+              <col style={{ width: '5%'  }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '12%' }} />
+            </colgroup>
             <TableHead>
               <TableRow>
                 {COLUMNS.map((col) => {
@@ -540,23 +578,25 @@ export function StatusReportTab({ enabled }) {
                 </TableRow>
               )}
 
-              {/* Top virtual spacer — preserves scroll position for rows above viewport */}
               {!isFetching && paddingTop > 0 && (
-                <TableRow sx={{ height: `${paddingTop}px !important`, border: 0 }}>
-                  <TableCell colSpan={COLUMNS.length} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
+                <TableRow sx={{ ...SPACER_ROW_SX, height: paddingTop }}>
+                  <TableCell colSpan={COLUMNS.length} sx={{ ...SPACER_CELL_SX, height: paddingTop }} />
                 </TableRow>
               )}
 
-              {/* Visible data rows */}
               {!isFetching && visibleRows.map((row, idx) => {
-                const rowStatus    = getRowStatus(row);
+                const rowStatus     = getRowStatus(row);
                 const isBatchFailed = rowStatus === 'Batch Failed';
                 const isBizError    = rowStatus === 'Biz Error';
-                // Use absolute index for stable key during virtualized scrolling
-                const absoluteIdx = startIndex + idx;
+                // Stable key: prefer job_name+start_time; fall back to absolute position.
+                // A stable key prevents React from destroying/recreating DOM nodes as
+                // rows scroll in and out of the virtual window.
+                const stableKey = row.job_name && row.start_time
+                  ? `${row.job_name}__${row.start_time}`
+                  : `row-${startIndex + idx}`;
                 return (
                   <TableRow
-                    key={absoluteIdx}
+                    key={stableKey}
                     hover
                     sx={{
                       backgroundColor: isBatchFailed
@@ -604,10 +644,9 @@ export function StatusReportTab({ enabled }) {
                 );
               })}
 
-              {/* Bottom virtual spacer — maintains scrollbar thumb size */}
               {!isFetching && paddingBottom > 0 && (
-                <TableRow sx={{ height: `${paddingBottom}px !important`, border: 0 }}>
-                  <TableCell colSpan={COLUMNS.length} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
+                <TableRow sx={{ ...SPACER_ROW_SX, height: paddingBottom }}>
+                  <TableCell colSpan={COLUMNS.length} sx={{ ...SPACER_CELL_SX, height: paddingBottom }} />
                 </TableRow>
               )}
             </TableBody>

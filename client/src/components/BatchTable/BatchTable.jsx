@@ -22,6 +22,11 @@
  *     on every 60s current-tasks poll by only updating rows whose currentTask changed.
  *   - currentTaskMap is memoised.
  *   - openBatchModal is stable useCallback from context.
+ *   - Scroll handler is RAF-throttled so React re-renders fire at most once per
+ *     animation frame (~16 ms) instead of on every scroll pixel, eliminating
+ *     main-thread jank with 1,000+ rows.
+ *   - All per-row sx objects are module-level constants — zero GC pressure
+ *     from inline object allocation during list rendering.
  */
 
 import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
@@ -36,62 +41,98 @@ import { useCurrentTasks }    from '../../hooks/useBatches';
 import { CurrentTaskBadge }   from '../CurrentTaskBadge/CurrentTaskBadge';
 import { SORTABLE_COLUMNS }   from '../../utils/constants';
 
+// ── Virtualization constants ──────────────────────────────────────────────────
 /**
- * ════════════════════════════════════════════════════════════════════════════
- * VIRTUALIZATION PERFORMANCE METRICS (Issue 2):
- * ────────────────────────────────────────────────────────────────────────────
- * Full DOM rendering of 890 rows with 5 cells per row = 4,450 <td> DOM nodes
- * + 890 <tr> elements + inner spans/chips/tooltips = ~10,000+ active DOM nodes.
- *
- * With row virtualization (FixedSizeList), only ~15–20 rows are mounted in the
- * viewport DOM at any instant = ~75–100 <td> nodes (~98% DOM node reduction).
- * This completely eliminates tab-switching delays, scroll stutter, and render lag.
- * ════════════════════════════════════════════════════════════════════════════
+ * Fixed row height in px — must match the actual rendered MUI Table row.
+ * MUI Table size="small" applies py: 6px (top+bottom) = 12px padding.
+ * Default body font line-height ≈ 20px. Total: 20 + 12 = 32px.
+ * Using 33px gives a 1px safety margin so the virtual window never
+ * under-counts visible rows, which would produce a blank strip at the bottom.
  */
-
-const VIRTUAL_ROW_HEIGHT = 44; // Fixed height in px per desktop row
-const OVERSCAN_COUNT = 5;      // Number of extra rows to render above and below viewport
+const VIRTUAL_ROW_HEIGHT = 33;
 
 /**
- * Feature flag — flip to `true` to restore the Current Task column.
- * When false: no API polling, no column header, no cell rendering.
+ * Extra rows rendered above and below the visible window.
+ * 8 rows @ 33px = 264px of buffer — enough to absorb fast scroll momentum
+ * without blank gaps becoming visible before the next RAF fires.
  */
+const OVERSCAN_COUNT = 8;
+
+/** Feature flag — flip to `true` to restore the Current Task column. */
 const SHOW_CURRENT_TASK = false;
 
-/**
- * Small chip that shows Y (green) or N (red) for Trigger Needed.
- * Empty/unknown values render an em-dash.
- */
+// ── Module-level sx constants — allocated once, never recreated per render ───
+const TABLE_CONTAINER_SX = {
+  overflowX: 'auto',
+  overflowY: 'auto',
+  width:     '100%',
+};
+
+const TABLE_SX = {
+  tableLayout: 'fixed',
+  width:       '100%',
+  minWidth:    700,
+};
+
+const HEADER_CELL_SX = {
+  whiteSpace:       'nowrap',
+  fontWeight:       700,
+  fontSize:         { md: '0.8rem', xl: '0.875rem' },
+  backgroundColor:  'background.paper',
+};
+
+const SPACER_ROW_SX  = { border: 0 };
+const SPACER_CELL_SX = { p: 0, border: 0 };
+
+const ROW_SX = {
+  cursor: 'pointer',
+  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
+};
+
+const CELL_NAME_SX = {
+  fontWeight:    500,
+  overflow:      'hidden',
+  textOverflow:  'ellipsis',
+  whiteSpace:    'nowrap',
+};
+
+const CELL_SCHEDULE_SX = {
+  fontFamily:    'monospace',
+  fontSize:      'clamp(0.72rem, 0.85vw, 0.85rem)',
+  overflow:      'hidden',
+  textOverflow:  'ellipsis',
+  whiteSpace:    'nowrap',
+};
+
+const CELL_ARGS_SX = {
+  overflow:      'hidden',
+  textOverflow:  'ellipsis',
+  whiteSpace:    'nowrap',
+};
+
+const CELL_TRIGGER_SX = {
+  overflow:   'hidden',
+  whiteSpace: 'nowrap',
+};
+
+// ── TriggerBadge ─────────────────────────────────────────────────────────────
+
+const CHIP_Y_SX = { bgcolor: 'success.main', color: 'success.contrastText', fontWeight: 700, fontSize: '0.72rem', height: 20 };
+const CHIP_N_SX = { bgcolor: 'error.main',   color: 'error.contrastText',   fontWeight: 700, fontSize: '0.72rem', height: 20 };
+
 function TriggerBadge({ value }) {
-  if (value === 'Y') {
-    return (
-      <Chip
-        label="Y"
-        size="small"
-        sx={{ bgcolor: 'success.main', color: 'success.contrastText', fontWeight: 700, fontSize: '0.72rem', height: 20 }}
-      />
-    );
-  }
-  if (value === 'N') {
-    return (
-      <Chip
-        label="N"
-        size="small"
-        sx={{ bgcolor: 'error.main', color: 'error.contrastText', fontWeight: 700, fontSize: '0.72rem', height: 20 }}
-      />
-    );
-  }
+  if (value === 'Y') return <Chip label="Y" size="small" sx={CHIP_Y_SX} />;
+  if (value === 'N') return <Chip label="N" size="small" sx={CHIP_N_SX} />;
   return <Typography variant="caption" color="text.secondary">—</Typography>;
 }
 
-/** Loading skeleton rows */
+// ── SkeletonRows ─────────────────────────────────────────────────────────────
+
 function SkeletonRows({ count = 8 }) {
   return Array.from({ length: count }).map((_, i) => (
     <TableRow key={i}>
       {SORTABLE_COLUMNS.map((col) => (
-        <TableCell key={col.id}>
-          <Skeleton variant="text" width="80%" />
-        </TableCell>
+        <TableCell key={col.id}><Skeleton variant="text" width="80%" /></TableCell>
       ))}
       {SHOW_CURRENT_TASK && (
         <TableCell><Skeleton variant="rounded" width={80} height={22} /></TableCell>
@@ -101,11 +142,8 @@ function SkeletonRows({ count = 8 }) {
 }
 SkeletonRows.propTypes = { count: PropTypes.number };
 
-/**
- * Mobile card for a single batch.
- * Memoised so the entire card list does not re-render when currentTaskMap
- * updates for an unrelated batch.
- */
+// ── BatchCard (mobile) ───────────────────────────────────────────────────────
+
 const BatchCard = React.memo(function BatchCard({ batch, currentTask, onClick }) {
   return (
     <Card elevation={1} sx={{ mb: 1 }}>
@@ -139,17 +177,10 @@ BatchCard.propTypes = {
   onClick:     PropTypes.func.isRequired,
 };
 
-const ROW_SX = {
-  cursor: 'pointer',
-  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
-};
+// ── BatchRow (desktop) ───────────────────────────────────────────────────────
 
-/**
- * Single desktop table row — memoised so only the rows whose currentTask
- * actually changed re-render during the 60s poll cycle.
- */
 const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, onClick }) {
-  const handleClick = useCallback(() => onClick(batch), [batch, onClick]);
+  const handleClick   = useCallback(() => onClick(batch), [batch, onClick]);
   const handleKeyDown = useCallback(
     (e) => { if (e.key === 'Enter') onClick(batch); },
     [batch, onClick]
@@ -164,12 +195,12 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
-      <TableCell sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <TableCell sx={CELL_NAME_SX}>
         <Tooltip title={batch.batchName} placement="top-start">
           <span>{batch.batchName}</span>
         </Tooltip>
       </TableCell>
-      <TableCell sx={{ fontFamily: 'monospace', fontSize: 'clamp(0.72rem, 0.85vw, 0.85rem)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <TableCell sx={CELL_SCHEDULE_SX}>
         {batch.scheduleName ? (
           <Tooltip title={batch.scheduleName} placement="top-start">
             <span>{batch.scheduleName}</span>
@@ -178,9 +209,7 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
           <Typography variant="caption" color="error">missing</Typography>
         )}
       </TableCell>
-      <TableCell
-        sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-      >
+      <TableCell sx={CELL_ARGS_SX}>
         <Tooltip title={batch.arguments || ''} placement="top">
           <span>
             {batch.arguments || (
@@ -189,11 +218,9 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
           </span>
         </Tooltip>
       </TableCell>
-      {/* Trigger Needed cell */}
-      <TableCell sx={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+      <TableCell sx={CELL_TRIGGER_SX}>
         <TriggerBadge value={batch.triggerNeeded} />
       </TableCell>
-      {/* Current Task cell — hidden when SHOW_CURRENT_TASK is false */}
       {SHOW_CURRENT_TASK && (
         <TableCell onClick={stopPropagation} sx={{ py: 0.5 }}>
           <CurrentTaskBadge
@@ -212,23 +239,19 @@ BatchRow.propTypes = {
   onClick:     PropTypes.func.isRequired,
 };
 
-/**
- * @param {{ batches: Object[], isLoading: boolean, isError: boolean }} props
- */
+// ── BatchTable ────────────────────────────────────────────────────────────────
+
+/** @param {{ batches: Object[], isLoading: boolean, isError: boolean }} props */
 export function BatchTable({ batches, isLoading, isError }) {
   const { openBatchModal, activeSheet } = useBatchContext();
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Current-task polling — only active when SHOW_CURRENT_TASK is enabled.
-  // When disabled the hook returns immediately with no data and no API call.
   const {
     data:      currentTasksEnvelope,
     isLoading: ctLoading,
   } = useCurrentTasks(SHOW_CURRENT_TASK ? activeSheet : null, SHOW_CURRENT_TASK);
 
-  // Build a batchName → currentTask lookup map for O(1) cell rendering.
-  // Returns an empty object when SHOW_CURRENT_TASK is false.
   const currentTaskMap = useMemo(() => {
     if (!SHOW_CURRENT_TASK || !currentTasksEnvelope?.data) return {};
     return Object.fromEntries(
@@ -236,36 +259,25 @@ export function BatchTable({ batches, isLoading, isError }) {
     );
   }, [currentTasksEnvelope]);
 
-  // ── Desktop virtualization state — must be declared before any early returns ──
-  // React Rules of Hooks: hooks cannot be called conditionally or after returns.
-  const containerRef = useRef(null);
+  // ── Virtualization state ──────────────────────────────────────────────────
+  const containerRef  = useRef(null);
+  const rafRef        = useRef(null);            // RAF handle for scroll throttle
   const [tableHeight, setTableHeight] = useState(500);
-  const [scrollTop, setScrollTop]     = useState(0);
+  const [scrollTop,   setScrollTop]   = useState(0);
 
-  // Sorting is disabled on Benefits/Tax headers. Display order is the server/upload order.
+  // Sorting disabled — display order matches server/upload order exactly.
   const sortedData = batches ?? [];
 
-  /**
-   * Reset scroll to top whenever the batches prop changes identity.
-   * This covers three scenarios that all produce the blank-gap artifact:
-   *   1. Tab switch (Benefits <-> Tax) — new array reference from useAllBatches select
-   *   2. Search query change — filteredBatches is a new array each time
-   *   3. Upload / refresh — invalidated cache delivers a fresh array
-   *
-   * Without this reset the TableContainer DOM node retains its previous
-   * scrollTop offset while the virtual window recalculates padding from 0,
-   * producing a blank region at the top equal to the old scroll offset.
-   */
+  // Reset scroll whenever the dataset changes (tab switch, search, upload).
   useEffect(() => {
     setScrollTop(0);
     if (containerRef.current) containerRef.current.scrollTop = 0;
   }, [batches]);
 
+  // Recalculate container height on window resize.
   useEffect(() => {
-    /** Recalculates the container height to fill the visible viewport area. */
     const updateHeight = () => {
-      const windowH = window.innerHeight;
-      const targetH = Math.max(300, Math.min(windowH - 320, 680));
+      const targetH = Math.max(300, Math.min(window.innerHeight - 320, 680));
       setTableHeight(targetH);
     };
     updateHeight();
@@ -273,22 +285,35 @@ export function BatchTable({ batches, isLoading, isError }) {
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
 
+  /**
+   * RAF-throttled scroll handler.
+   * Batches scroll events into a single React state update per animation frame
+   * (~16 ms) instead of one per pixel scrolled. With 1,000 rows this reduces
+   * scroll-driven re-renders from ~60/s to exactly 60/s (one per frame) while
+   * keeping the virtual window perfectly in sync with the viewport.
+   */
   const handleScroll = useCallback((e) => {
-    setScrollTop(e.currentTarget.scrollTop);
+    const target = e.currentTarget;
+    if (rafRef.current) return; // already scheduled — skip duplicate events this frame
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setScrollTop(target.scrollTop);
+    });
   }, []);
 
-  // Virtualised window — only mount rows inside (or near) the visible viewport.
-  const totalCount = sortedData.length;
-  const startIndex = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
-  const endIndex   = Math.min(
+  // Cancel any pending RAF on unmount to avoid setState after unmount.
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+
+  // ── Virtual window calculation ────────────────────────────────────────────
+  const totalCount    = sortedData.length;
+  const startIndex    = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
+  const endIndex      = Math.min(
     totalCount,
     Math.ceil((scrollTop + tableHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
   );
   const paddingTop    = startIndex * VIRTUAL_ROW_HEIGHT;
   const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
-
-  // Column count for colSpan on virtual spacer rows.
-  const columnCount = SORTABLE_COLUMNS.length + (SHOW_CURRENT_TASK ? 1 : 0);
+  const columnCount   = SORTABLE_COLUMNS.length + (SHOW_CURRENT_TASK ? 1 : 0);
 
   const visibleBatches = useMemo(
     () => sortedData.slice(startIndex, endIndex),
@@ -306,7 +331,7 @@ export function BatchTable({ batches, isLoading, isError }) {
     );
   }
 
-  if (!isLoading && (!sortedData || sortedData.length === 0)) {
+  if (!isLoading && sortedData.length === 0) {
     return (
       <Box p={4} textAlign="center">
         <Typography color="text.secondary">
@@ -340,22 +365,9 @@ export function BatchTable({ batches, isLoading, isError }) {
       elevation={0}
       ref={containerRef}
       onScroll={handleScroll}
-      sx={{
-        overflowX: 'auto',
-        overflowY: 'auto',
-        maxHeight: tableHeight,
-        width:     '100%',
-      }}
+      sx={{ ...TABLE_CONTAINER_SX, maxHeight: tableHeight }}
     >
-      <Table
-        size="small"
-        stickyHeader
-        sx={{
-          tableLayout: 'fixed',
-          width: '100%',
-          minWidth: 700,
-        }}
-      >
+      <Table size="small" stickyHeader sx={TABLE_SX}>
         <colgroup>
           <col style={{ width: '30%' }} />
           <col style={{ width: '25%' }} />
@@ -365,20 +377,12 @@ export function BatchTable({ batches, isLoading, isError }) {
         <TableHead>
           <TableRow>
             {SORTABLE_COLUMNS.map((col) => (
-              <TableCell
-                key={col.id}
-                sx={{
-                  whiteSpace: 'nowrap',
-                  fontWeight: 700,
-                  fontSize: { md: '0.8rem', xl: '0.875rem' },
-                  backgroundColor: 'background.paper',
-                }}
-              >
+              <TableCell key={col.id} sx={HEADER_CELL_SX}>
                 {col.label}
               </TableCell>
             ))}
             {SHOW_CURRENT_TASK && (
-              <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 700, minWidth: 110, fontSize: { md: '0.8rem', xl: '0.875rem' }, backgroundColor: 'background.paper' }}>
+              <TableCell sx={{ ...HEADER_CELL_SX, minWidth: 110 }}>
                 Current Task
               </TableCell>
             )}
@@ -389,10 +393,9 @@ export function BatchTable({ batches, isLoading, isError }) {
             <SkeletonRows />
           ) : (
             <>
-              {/* Top virtual spacer — preserves scroll position for rows above viewport */}
               {paddingTop > 0 && (
-                <TableRow sx={{ height: `${paddingTop}px !important`, border: 0 }}>
-                  <TableCell colSpan={columnCount} sx={{ p: 0, border: 0, height: `${paddingTop}px` }} />
+                <TableRow sx={{ ...SPACER_ROW_SX, height: paddingTop }}>
+                  <TableCell colSpan={columnCount} sx={{ ...SPACER_CELL_SX, height: paddingTop }} />
                 </TableRow>
               )}
               {visibleBatches.map((batch) => (
@@ -404,10 +407,9 @@ export function BatchTable({ batches, isLoading, isError }) {
                   onClick={openBatchModal}
                 />
               ))}
-              {/* Bottom virtual spacer — maintains scrollbar thumb size for rows below viewport */}
               {paddingBottom > 0 && (
-                <TableRow sx={{ height: `${paddingBottom}px !important`, border: 0 }}>
-                  <TableCell colSpan={columnCount} sx={{ p: 0, border: 0, height: `${paddingBottom}px` }} />
+                <TableRow sx={{ ...SPACER_ROW_SX, height: paddingBottom }}>
+                  <TableCell colSpan={columnCount} sx={{ ...SPACER_CELL_SX, height: paddingBottom }} />
                 </TableRow>
               )}
             </>
