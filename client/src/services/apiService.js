@@ -130,14 +130,14 @@ export async function fetchStatusReportFresh() {
 export async function uploadSheet(sheet, file) {
   const formData = new FormData();
   formData.append('file', file);
-  // Do NOT set Content-Type manually — the browser/Axios must auto-generate the
-  // multipart/form-data boundary string. Passing `undefined` leaves the key
-  // present in some Axios versions and can suppress the boundary, breaking the
-  // upload. Instead, build a headers object without the key entirely.
-  const uploadHeaders = { ...client.defaults.headers.common };
-  delete uploadHeaders['Content-Type'];
+  // Setting 'Content-Type': null in Axios 1.x explicitly removes the header
+  // from the merged set (instance default + request config). This is the only
+  // reliable way to prevent the axios instance's 'Content-Type: application/json'
+  // default from overriding the browser-generated 'multipart/form-data; boundary=...'
+  // that FormData requires. Using `undefined` or spreading .common and deleting
+  // does NOT work — the top-level instance default is still merged in by Axios 1.x.
   const res = await client.post(API_PATHS.uploadSheet(sheet), formData, {
-    headers: uploadHeaders,
+    headers: { 'Content-Type': null },
   });
   return res.data;
 }
