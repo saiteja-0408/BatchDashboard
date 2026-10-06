@@ -209,19 +209,23 @@ function getByName(name, sheetSource) {
 }
 
 /**
- * Full-text search across batchName, scheduleName, and arguments.
+ * Full-text search across batchName, scheduleName, arguments, and triggerNeeded.
+ * Guards all fields with (|| '') so null/undefined values never cause a
+ * TypeError crash when the store is populated from a non-createBatch path.
  * @param {string} query
  * @param {string|undefined} sheetSource
  * @returns {import('../models/batchModel').BatchModel[]}
  */
 function search(query, sheetSource) {
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
+  if (!q) return sheetSource ? _store.filter((b) => b.sheetSource === sheetSource) : [..._store];
   return _store.filter((b) => {
     if (sheetSource && b.sheetSource !== sheetSource) return false;
     return (
-      b.batchName.toLowerCase().includes(q)    ||
-      b.scheduleName.toLowerCase().includes(q) ||
-      b.arguments.toLowerCase().includes(q)
+      (b.batchName     || '').toLowerCase().includes(q) ||
+      (b.scheduleName  || '').toLowerCase().includes(q) ||
+      (b.arguments     || '').toLowerCase().includes(q) ||
+      (b.triggerNeeded || '').toLowerCase().includes(q)
     );
   });
 }

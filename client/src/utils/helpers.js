@@ -129,7 +129,15 @@ export function getRowStatus(row) {
     return 'OK';
   }
 
-  return row.status ?? row._status ?? row.biz_error_flag ?? '—';
+  // Return the explicit status string only if it is a non-empty, non-flag value.
+  // Never propagate raw flag values ('N', 'Y', etc.) as display strings — they
+  // have already been handled by the priority checks above.
+  const rawStatus = row.status ?? row._status;
+  if (typeof rawStatus === 'string' && rawStatus.trim()) {
+    return rawStatus.trim();
+  }
+
+  return '—';
 }
 
 /**

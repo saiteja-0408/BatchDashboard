@@ -130,10 +130,14 @@ export async function fetchStatusReportFresh() {
 export async function uploadSheet(sheet, file) {
   const formData = new FormData();
   formData.append('file', file);
-  // Do NOT hardcode Content-Type: multipart/form-data with a static header so
-  // Axios/browser can automatically generate the correct boundary string.
+  // Do NOT set Content-Type manually — the browser/Axios must auto-generate the
+  // multipart/form-data boundary string. Passing `undefined` leaves the key
+  // present in some Axios versions and can suppress the boundary, breaking the
+  // upload. Instead, build a headers object without the key entirely.
+  const uploadHeaders = { ...client.defaults.headers.common };
+  delete uploadHeaders['Content-Type'];
   const res = await client.post(API_PATHS.uploadSheet(sheet), formData, {
-    headers: { 'Content-Type': undefined },
+    headers: uploadHeaders,
   });
   return res.data;
 }

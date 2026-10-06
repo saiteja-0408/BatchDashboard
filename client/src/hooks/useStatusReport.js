@@ -103,7 +103,13 @@ export function useStatusReport(enabled = false) {
     // without going to the network. Combined with refetchInterval this means
     // every tick issues a real HTTP request.
     staleTime: 0,
-    refetchInterval: resolveRefetchInterval(enabled),
+    // Polling interval source:
+    //   VITE_STATUS_REPORT_REFRESH_INTERVAL_MS (env) → parsed by parseStatusReportRefreshInterval()
+    //   → exported as STATUS_REPORT_REFRESH_INTERVAL_MS from utils/constants.js
+    //   → passed here via resolveRefetchInterval().
+    //   Default when env var is absent/invalid: 10,000 ms (10 s).
+    //   Set VITE_STATUS_REPORT_REFRESH_INTERVAL_MS=0 to disable auto-polling.
+    refetchInterval: resolveRefetchInterval(enabled), // currently: 10 000 ms per .env
     refetchOnWindowFocus: false,
     retry: 1,
     retryDelay,
