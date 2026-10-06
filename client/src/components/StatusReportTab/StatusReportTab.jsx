@@ -80,7 +80,7 @@ function StatusChip({ row }) {
       <Chip
         label="Biz Error"
         size="small"
-        sx={{ bgcolor: 'error.main', color: 'error.contrastText', fontWeight: 700, fontSize: '0.72rem' }}
+        sx={{ bgcolor: '#ed6c02', color: '#fff', fontWeight: 700, fontSize: '0.72rem' }}
       />
     );
   }
