@@ -34,15 +34,35 @@ export default function App() {
       <AppThemeProvider>
         <BatchProvider>
           <BrowserRouter>
-            <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+            {/*
+             * height: '100%' inherits from #root (set to 100% in index.html).
+             * display flex + flexDirection column means AppHeader takes its
+             * natural height and the Routes area gets flex:1 to fill the rest.
+             */}
+            <Box
+              sx={{
+                height:        '100%',
+                display:       'flex',
+                flexDirection: 'column',
+                bgcolor:       'background.default',
+              }}
+            >
               <Suspense fallback={
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
                   <CircularProgress />
                 </Box>
               }>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                </Routes>
+                {/*
+                 * flex:1 + minHeight:0 — the Routes wrapper grows to fill all
+                 * space left after the AppHeader, and minHeight:0 lets it shrink
+                 * below its content height so the table inside can scroll rather
+                 * than push the page taller.
+                 */}
+                <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                  </Routes>
+                </Box>
               </Suspense>
             </Box>
           </BrowserRouter>

@@ -275,15 +275,18 @@ export function BatchTable({ batches, isLoading, isError }) {
     if (containerRef.current) containerRef.current.scrollTop = 0;
   }, [batches]);
 
-  // Recalculate container height on window resize.
+  // Measure the actual rendered container height via ResizeObserver.
+  // Replaces the window.innerHeight - 320 heuristic that left a gap on large
+  // screens when the constant didn't match real header overhead.
   useEffect(() => {
-    const updateHeight = () => {
-      const targetH = Math.max(300, Math.min(window.innerHeight - 320, 680));
-      setTableHeight(targetH);
-    };
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect?.height;
+      if (h > 0) setTableHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   /**
@@ -366,7 +369,15 @@ export function BatchTable({ batches, isLoading, isError }) {
       elevation={0}
       ref={containerRef}
       onScroll={handleScroll}
-      sx={{ ...TABLE_CONTAINER_SX, maxHeight: tableHeight }}
+      sx={{
+        ...TABLE_CONTAINER_SX,
+        // flex:1 + height:0: fills the wrapper Box(flex:1,minHeight:0) in Dashboard.
+        // height:0 overrides the flex item's default min-height:auto so the
+        // container can shrink and the inner table scrolls instead of overflowing.
+        // maxHeight is removed — height is now purely CSS-driven, not JS.
+        flex:   1,
+        height: 0,
+      }}
     >
       <Table size="small" stickyHeader sx={TABLE_SX}>
         <colgroup>

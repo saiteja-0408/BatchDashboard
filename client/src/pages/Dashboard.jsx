@@ -132,20 +132,25 @@ export default function Dashboard() {
 
   return (
     /*
-     * maxWidth={false} — fills the full viewport width at every screen size.
-     * py/px props provide the only inset; no centred-column cap is applied.
+     * maxWidth={false} — fills full viewport width.
+     * height:'100%' + display:flex + flexDirection:column — Container
+     * participates in the flex chain started by App.jsx so it fills all
+     * remaining vertical space below the AppHeader.
+     * py/px provide inset; no overflowX:hidden (clips table scroll on narrow
+     * viewports).
      */
     <Container
       maxWidth={false}
       sx={{
-        py: { xs: 2, sm: 3, lg: 4 },
-        px: { xs: 1.5, sm: 2, md: 3, lg: 4 },
-        // Do NOT set overflowX: 'hidden' here — it clips table horizontal scroll
-        // on viewports narrower than minWidth constraints in child tables.
-        minWidth: 0,
+        height:        '100%',
+        display:       'flex',
+        flexDirection: 'column',
+        py:            { xs: 2, sm: 3, lg: 4 },
+        px:            { xs: 1.5, sm: 2, md: 3, lg: 4 },
+        minWidth:      0,
       }}
     >
-      {/* Page heading */}
+      {/* Page heading — shrinks to its natural height */}
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         justifyContent="space-between"
@@ -153,6 +158,7 @@ export default function Dashboard() {
         flexWrap="wrap"
         gap={1}
         mb={{ xs: 2, lg: 3 }}
+        flexShrink={0}
       >
         <Box>
           <Typography variant="h5" fontWeight={700}>Batch Monitoring</Typography>
@@ -220,26 +226,48 @@ export default function Dashboard() {
         </Stack>
       </Stack>
 
-      {/* Sheet selector tabs — Status Report | Benefits | Tax */}
-      <SheetTabs />
+      {/* Sheet selector tabs — shrinks to its natural height */}
+      <Box flexShrink={0}>
+        <SheetTabs />
+      </Box>
 
-      {isStatusReportTab ? (
-        /* ── Status Report tab — full-width table, no search ── */
-        <StatusReportTab enabled />
-      ) : (
-        /* ── Benefits / Tax tabs — search bar + batch table ── */
-        <>
-          <Box mb={2}>
-            <SearchBar />
-          </Box>
+      {/*
+       * Table area — flex:1 + minHeight:0.
+       * flex:1 grows to consume all remaining vertical space after the header
+       * Stack and SheetTabs above.
+       * minHeight:0 overrides the flex-item default (minHeight:auto) which
+       * would prevent the container from shrinking below its content height —
+       * without it the inner table can never scroll; it just pushes the page
+       * taller instead.
+       */}
+      <Box
+        sx={{
+          flex:      1,
+          minHeight: 0,
+          display:   'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {isStatusReportTab ? (
+          /* ── Status Report tab — full-width table, no search ── */
+          <StatusReportTab enabled />
+        ) : (
+          /* ── Benefits / Tax tabs — search bar + batch table ── */
+          <>
+            <Box mb={2} flexShrink={0}>
+              <SearchBar />
+            </Box>
 
-          <BatchTable
-            batches={filteredBatches}
-            isLoading={isLoading}
-            isError={isError}
-          />
-        </>
-      )}
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              <BatchTable
+                batches={filteredBatches}
+                isLoading={isLoading}
+                isError={isError}
+              />
+            </Box>
+          </>
+        )}
+      </Box>
 
       {/* Batch detail modal (globally mounted — reads from context) */}
       <BatchDetailModal />

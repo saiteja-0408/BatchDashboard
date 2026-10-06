@@ -324,13 +324,18 @@ export function StatusReportTab({ enabled }) {
   const [tableHeight, setTableHeight] = useState(500);
   const [scrollTop,   setScrollTop]   = useState(0);
 
+  // Measure the actual rendered container height via ResizeObserver.
+  // This replaces the old window.innerHeight - 320 heuristic which left a gap
+  // on large screens whenever the constant didn't match real header overhead.
   useEffect(() => {
-    const updateHeight = () => {
-      setTableHeight(Math.max(300, Math.min(window.innerHeight - 320, 700)));
-    };
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect?.height;
+      if (h > 0) setTableHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   /**
@@ -442,11 +447,16 @@ export function StatusReportTab({ enabled }) {
   const noResults = !isFetching && searchQuery.trim() && filteredRows.length === 0 && allRows.length > 0;
 
   return (
-    <Box sx={{ width: '100%', minWidth: 0 }}>
+    /*
+     * height:'100%' + flex column: fills the parent flex item passed down from
+     * Dashboard.jsx. The search bar takes its natural height (flexShrink:0) and
+     * the TableContainer below gets flex:1 + minHeight:0 so it fills the rest.
+     */
+    <Box sx={{ width: '100%', minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
 
-      {/* ── Search input ── */}
+      {/* ── Search input — fixed height, does not grow ── */}
       {showTable && (
-        <Box mb={1}>
+        <Box mb={1} flexShrink={0}>
           <TextField
             fullWidth
             size="small"
@@ -526,7 +536,17 @@ export function StatusReportTab({ enabled }) {
           elevation={0}
           ref={containerRef}
           onScroll={handleScroll}
-          sx={{ ...TABLE_CONTAINER_SX, maxHeight: tableHeight }}
+          sx={{
+            ...TABLE_CONTAINER_SX,
+            // flex:1 + height:0 is the CSS trick for "fill remaining space":
+            //   flex:1    — grow to consume all space left after the search bar
+            //   height:0  — override the flex item's default min-height:auto so
+            //               the container can shrink below its content height and
+            //               the inner table scrolls rather than pushing the page.
+            // maxHeight is removed — height is now purely CSS-driven, not JS.
+            flex:   1,
+            height: 0,
+          }}
         >
           <Table size="small" stickyHeader sx={TABLE_SX}>
             <colgroup>
