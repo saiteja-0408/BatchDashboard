@@ -138,9 +138,11 @@ export default function Dashboard() {
     <Container
       maxWidth={false}
       sx={{
-        py:        { xs: 2, sm: 3, lg: 4 },
-        px:        { xs: 1.5, sm: 2, md: 3, lg: 4 },
-        overflowX: 'hidden',
+        py: { xs: 2, sm: 3, lg: 4 },
+        px: { xs: 1.5, sm: 2, md: 3, lg: 4 },
+        // Do NOT set overflowX: 'hidden' here — it clips table horizontal scroll
+        // on viewports narrower than minWidth constraints in child tables.
+        minWidth: 0,
       }}
     >
       {/* Page heading */}

@@ -61,8 +61,15 @@ export function SheetTabs() {
   };
 
   return (
-    <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-      <Tabs value={activeSheet} onChange={handleChange} aria-label="Sheet selector">
+    <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, minWidth: 0 }}>
+      <Tabs
+        value={activeSheet}
+        onChange={handleChange}
+        aria-label="Sheet selector"
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+      >
         {SHEET_SOURCES.map((sheet) => (
           <Tab
             key={sheet}

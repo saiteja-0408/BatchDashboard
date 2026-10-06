@@ -51,8 +51,8 @@ const VIRTUAL_ROW_HEIGHT = 33;
 const OVERSCAN_COUNT = 8;
 
 // ── Module-level sx constants (allocated once, never recreated per render) ───
-const TABLE_CONTAINER_SX = { width: '100%', overflowX: 'auto', overflowY: 'auto' };
-const TABLE_SX           = { tableLayout: 'fixed', minWidth: 900 };
+const TABLE_CONTAINER_SX = { width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'auto' };
+const TABLE_SX           = { tableLayout: 'fixed', width: '100%', minWidth: 900 };
 const SPACER_ROW_SX      = { border: 0 };
 const SPACER_CELL_SX     = { p: 0, border: 0 };
 
@@ -234,10 +234,14 @@ function compareRowsByColumn(a, b, colId, direction) {
     // regardless of asc/desc so that critical rows are always surfaced at the top.
     if (pa !== pb) return direction === 'asc' ? pa - pb : pb - pa;
 
-    // Same priority bucket — for "Batch Failed" preserve stable (arrival) order;
-    // for all other buckets, fall through to a secondary alphabetical compare.
-    if (pa === 0) return 0; // stable: keep original relative order for failed rows
-    return compareValues(statusA, statusB, direction);
+    // Same priority bucket — secondary sort: earliest start_time first (ascending).
+    // This applies to every bucket (Batch Failed, Biz Error, and others) so that
+    // within each group rows appear in chronological order regardless of asc/desc.
+    const dateA = parseDateValue(a.start_time);
+    const dateB = parseDateValue(b.start_time);
+    const msA   = dateA ? dateA.getTime() : null;
+    const msB   = dateB ? dateB.getTime() : null;
+    return compareValues(msA, msB, 'asc');
   }
 
   // Date columns: parse and compare as Date ms values

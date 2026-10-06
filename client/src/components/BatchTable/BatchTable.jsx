@@ -66,6 +66,7 @@ const TABLE_CONTAINER_SX = {
   overflowX: 'auto',
   overflowY: 'auto',
   width:     '100%',
+  maxWidth:  '100%',
 };
 
 const TABLE_SX = {
