@@ -32,12 +32,15 @@ const STALE_TIME = 5 * 60_000; // 5 minutes cache for static batch data (invalid
  */
 export function useAllBatches(sheet) {
   return useQuery({
-    queryKey:  ['batches', 'all'],
-    queryFn:   () => fetchAllBatches(),
-    staleTime: STALE_TIME,
+    queryKey:        ['batches', 'all'],
+    queryFn:         () => fetchAllBatches(),
+    staleTime:       STALE_TIME,
     // Disable when sheet is null (e.g. Status Report tab is active)
-    enabled:   sheet !== null && sheet !== undefined,
-    select:    (allData) => {
+    enabled:         sheet !== null && sheet !== undefined,
+    // Always re-fetch from server when the component mounts so data is
+    // never stale after a tab switch or an upload + page re-visit.
+    refetchOnMount:  true,
+    select:          (allData) => {
       if (!allData || !Array.isArray(allData)) return [];
       const result = sheet ? allData.filter((b) => b.sheetSource === sheet) : allData;
       // Log full dataset size on every select so the 1000-row requirement can be

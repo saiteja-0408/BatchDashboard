@@ -107,8 +107,12 @@ export default function Dashboard() {
     setUploading(true);
     try {
       const result = await uploadSheet(activeSheet, file);
-      // Invalidate TanStack Query cache so the table refreshes from new server data
-      await queryClient.invalidateQueries({ queryKey: ['batches'] });
+      // Explicitly refetch the ['batches','all'] query so the table re-renders
+      // with the uploaded data immediately. Using refetchQueries (not just
+      // invalidateQueries) guarantees the network request fires and completes
+      // before we show the success snackbar, even when the query's staleTime
+      // has not yet expired.
+      await queryClient.refetchQueries({ queryKey: ['batches', 'all'], exact: true });
       setSnackbar({
         open:     true,
         message:  result.message || `Uploaded successfully — ${result.count} batch(es) loaded.`,
