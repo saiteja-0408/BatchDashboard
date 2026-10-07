@@ -26,7 +26,7 @@ import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab'
 
 import { useBatchContext }   from '../context/BatchContext';
 import { useAllBatches }     from '../hooks/useBatches';
-import { uploadSheet }       from '../services/apiService';
+import { uploadSheet, fetchAllBatches } from '../services/apiService';
 import { useStatusReport }   from '../hooks/useStatusReport';
 
 export default function Dashboard() {
@@ -107,12 +107,15 @@ export default function Dashboard() {
     setUploading(true);
     try {
       const result = await uploadSheet(activeSheet, file);
-      // Explicitly refetch the ['batches','all'] query so the table re-renders
-      // with the uploaded data immediately. Using refetchQueries (not just
-      // invalidateQueries) guarantees the network request fires and completes
-      // before we show the success snackbar, even when the query's staleTime
-      // has not yet expired.
-      await queryClient.refetchQueries({ queryKey: ['batches', 'all'], exact: true });
+      // 1. Remove the stale cache entry so React Query treats the next fetch
+      //    as a cold load — no staleTime check, no partial data flash.
+      queryClient.removeQueries({ queryKey: ['batches', 'all'], exact: true });
+      // 2. Trigger a fresh fetch and await its completion so the table is
+      //    populated before the success snackbar appears.
+      await queryClient.fetchQuery({
+        queryKey: ['batches', 'all'],
+        queryFn:  () => fetchAllBatches(),
+      });
       setSnackbar({
         open:     true,
         message:  result.message || `Uploaded successfully — ${result.count} batch(es) loaded.`,

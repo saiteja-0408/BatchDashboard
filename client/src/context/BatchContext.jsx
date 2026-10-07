@@ -89,14 +89,11 @@ const DEFAULT_TAB     = 'status-report';
 export function BatchProvider({ children }) {
   // ── Data / UI state (search, active tab) ──────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeSheet, setActiveSheet] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem(STORAGE_TAB_KEY) || localStorage.getItem(STORAGE_TAB_KEY);
-      return saved || DEFAULT_TAB;
-    } catch {
-      return DEFAULT_TAB;
-    }
-  });
+  // Always open on the Status Report tab regardless of any previously
+  // persisted value — the stored value is kept only for within-session
+  // tab switches so the user's last tab is remembered if they navigate away
+  // and back, but on a fresh page load we always land on Status Report.
+  const [activeSheet, setActiveSheet] = useState(DEFAULT_TAB);
 
   // ── Modal state via reducer (single dispatch = single render pass) ─────────
   const [modalState, dispatchModal] = useReducer(modalReducer, MODAL_INITIAL);
