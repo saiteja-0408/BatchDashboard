@@ -76,16 +76,34 @@ async function getBatchByName(req, res) {
   res.json({ success: true, data: batch });
 }
 
+// ── SSH log helpers ───────────────────────────────────────────────────────────
+
 /**
- * GET /api/batches/:name/logs?sheet=benefits|tax&lines=500
- * SSHs into the configured remote server and returns the tail of the
- * batch's log file as plain text.
+ * Resolves the full remote log directory for a batch.
  *
- * The log path is derived from batch.logDir (the server's log directory
- * already contains the batch name).  An optional `lines` query param
- * overrides the default tail depth (LOG_FETCH_LINES env or 500).
+ * batch.logDir is stored as a shell "cd" command string from SHEET_LOG_PATHS:
+ *   e.g. "cd /opt/app/accessms/bin/benefits/batch"
+ *
+ * The actual per-batch log directory on the server is:
+ *   <base>/logs/<batchName>
+ *   e.g. /opt/app/accessms/bin/benefits/batch/logs/BatchGetDd214Response
+ *
+ * @param {Object} batch
+ * @returns {string}  Absolute path to the batch's log directory
  */
-async function getBatchLogs(req, res) {
+function resolveBatchLogDir(batch) {
+  // Strip the leading "cd " if present, then trim slashes
+  const base = batch.logDir.replace(/^cd\s+/i, '').trim().replace(/\/+$/, '');
+  return `${base}/logs/${batch.batchName}`;
+}
+
+/**
+ * Shared logic: resolve batch, derive log directory, send response as plain text.
+ * @param {Object} req
+ * @param {Object} res
+ * @param {'today'|'error'} logType
+ */
+async function _serveBatchLog(req, res, logType) {
   const name  = decodeURIComponent(req.params.name);
   const sheet = req.query.sheet || undefined;
   const lines = req.query.lines ? Number(req.query.lines) : undefined;
@@ -104,11 +122,30 @@ async function getBatchLogs(req, res) {
     throw err;
   }
 
-  // logDir already contains the full remote path (e.g. /opt/app/accessms/bin/benefits/batch/logs/BATCHNAME)
-  const logContent = await sshService.fetchRemoteLog(batch.logDir, lines);
+  const logDir = resolveBatchLogDir(batch);
+
+  const logContent = logType === 'error'
+    ? await sshService.fetchErrorLog(logDir, batch.batchName, lines)
+    : await sshService.fetchTodayLog(logDir, batch.batchName, lines);
 
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.send(logContent);
 }
 
-module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, getBatchLogs };
+/**
+ * GET /api/batches/:name/logs?sheet=benefits|tax&lines=500
+ * Fetches today's dated log file:  <BatchName><MM-DD-YYYY>.log
+ */
+async function getBatchLogs(req, res) {
+  return _serveBatchLog(req, res, 'today');
+}
+
+/**
+ * GET /api/batches/:name/error-logs?sheet=benefits|tax&lines=500
+ * Fetches the Bus Error log file:  *<BatchName>*_Bus_Error.log
+ */
+async function getBatchErrorLogs(req, res) {
+  return _serveBatchLog(req, res, 'error');
+}
+
+module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, getBatchLogs, getBatchErrorLogs };
