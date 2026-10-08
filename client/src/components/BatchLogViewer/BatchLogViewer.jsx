@@ -1,54 +1,63 @@
 /**
- * BatchLogViewer.jsx — fetches and displays a remote batch log file.
+ * BatchLogViewer.jsx — fetches and displays remote batch log files.
  *
  * Rendered inside BatchDetailModal below the CommandViewer.
- * Stays collapsed by default; clicking "Get Logs" triggers the SSH fetch
- * via the backend and shows the result in a scrollable pre block.
  *
- * States:
- *   idle      → "Get Logs" button visible, nothing fetched yet
- *   loading   → spinner shown, button disabled
- *   success   → log content displayed in a scrollable <pre>
- *   error     → error message shown with a retry button
+ * Two buttons:
+ *   "Get Logs"        — fetches today's dated log:  <BatchName><MM-DD-YYYY>.log
+ *   "Get Error Logs"  — fetches the Bus Error log:  *<BatchName>*_Bus_Error.log
  *
- * Performance:
- *   - Component is memoised; only re-renders when `batch` prop identity changes.
- *   - Log state is local — does not pollute global BatchContext.
- *   - Abort controller cancels any in-flight request when the modal closes
- *     or the batch changes before the fetch resolves.
+ * Both share a single log output panel below.  Clicking either button replaces
+ * the previous result, with a label showing which log type is currently displayed.
+ *
+ * States per button:
+ *   idle     → button enabled, no output shown
+ *   loading  → spinner on the clicked button, both buttons disabled
+ *   success  → log content shown in scrollable <pre> with "Copy All"
+ *   error    → red alert with message, both buttons re-enabled for retry
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box, Button, Typography, CircularProgress, Alert,
-  Collapse, Divider, Tooltip,
+  Collapse, Divider, Chip, Tooltip,
 } from '@mui/material';
-import DownloadIcon    from '@mui/icons-material/Assessment';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckIcon       from '@mui/icons-material/Check';
-import { fetchBatchLogs } from '../../services/apiService';
+import ArticleIcon        from '@mui/icons-material/Assessment';
+import ErrorOutlineIcon   from '@mui/icons-material/RemoveCircleOutline';
+import ContentCopyIcon    from '@mui/icons-material/ContentCopy';
+import CheckIcon          from '@mui/icons-material/Check';
+import { fetchBatchLogs, fetchBatchErrorLogs } from '../../services/apiService';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
-// ── Log content panel ─────────────────────────────────────────────────────────
+// ── Log output panel ──────────────────────────────────────────────────────────
 
-const LogPanel = React.memo(function LogPanel({ content }) {
+const LogPanel = React.memo(function LogPanel({ content, logTypeLabel }) {
   const { copy, copied } = useCopyToClipboard();
 
   return (
-    <Box sx={{ position: 'relative', mt: 1 }}>
-      {/* Copy-all button */}
-      <Tooltip title={copied ? 'Copied!' : 'Copy all'}>
-        <Button
+    <Box sx={{ mt: 1 }}>
+      {/* Header row: which log is showing + copy button */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Chip
+          label={logTypeLabel}
           size="small"
           variant="outlined"
-          startIcon={copied ? <CheckIcon /> : <ContentCopyIcon />}
-          onClick={() => copy(content)}
-          sx={{ mb: 1, minWidth: 110 }}
-        >
-          {copied ? 'Copied' : 'Copy All'}
-        </Button>
-      </Tooltip>
+          color="default"
+          sx={{ fontSize: '0.72rem' }}
+        />
+        <Tooltip title={copied ? 'Copied!' : 'Copy all'}>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={copied ? <CheckIcon /> : <ContentCopyIcon />}
+            onClick={() => copy(content)}
+            sx={{ minWidth: 100 }}
+          >
+            {copied ? 'Copied' : 'Copy All'}
+          </Button>
+        </Tooltip>
+      </Box>
 
       {/* Scrollable log body */}
       <Box
@@ -56,7 +65,7 @@ const LogPanel = React.memo(function LogPanel({ content }) {
         sx={{
           m: 0,
           p: 1.5,
-          maxHeight: 400,
+          maxHeight: 420,
           overflowY: 'auto',
           fontSize: 'clamp(0.68rem, 1.4vw, 0.78rem)',
           fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
@@ -77,7 +86,8 @@ const LogPanel = React.memo(function LogPanel({ content }) {
 });
 
 LogPanel.propTypes = {
-  content: PropTypes.string.isRequired,
+  content:      PropTypes.string.isRequired,
+  logTypeLabel: PropTypes.string.isRequired,
 };
 
 // ── BatchLogViewer ────────────────────────────────────────────────────────────
@@ -86,35 +96,39 @@ LogPanel.propTypes = {
  * @param {{ batch: Object }} props
  */
 export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
-  const [status,  setStatus]  = useState('idle');    // 'idle' | 'loading' | 'success' | 'error'
-  const [logText, setLogText] = useState('');
-  const [errMsg,  setErrMsg]  = useState('');
+  // 'idle' | 'loading-today' | 'loading-error' | 'success' | 'error'
+  const [status,       setStatus]       = useState('idle');
+  const [logText,      setLogText]      = useState('');
+  const [errMsg,       setErrMsg]       = useState('');
+  const [activeLogType, setActiveLogType] = useState('');  // 'today' | 'error'
 
-  // Keep an AbortController ref so we can cancel in-flight requests.
   const abortRef = useRef(null);
 
-  // Reset to idle whenever the batch changes (new modal open).
+  // Reset when batch changes (new modal open)
   useEffect(() => {
     setStatus('idle');
     setLogText('');
     setErrMsg('');
-    // Cancel any in-flight request from a previous batch.
+    setActiveLogType('');
     abortRef.current?.abort();
   }, [batch?.batchName]);
 
-  const handleFetch = useCallback(async () => {
+  const handleFetch = useCallback(async (logType) => {
     if (!batch) return;
 
-    // Cancel any previous in-flight request before starting a new one.
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
-    setStatus('loading');
+    setStatus(logType === 'error' ? 'loading-error' : 'loading-today');
     setLogText('');
     setErrMsg('');
+    setActiveLogType(logType);
 
     try {
-      const text = await fetchBatchLogs(batch.batchName, batch.sheetSource);
+      const text = logType === 'error'
+        ? await fetchBatchErrorLogs(batch.batchName, batch.sheetSource)
+        : await fetchBatchLogs(batch.batchName, batch.sheetSource);
+
       setLogText(text);
       setStatus('success');
     } catch (err) {
@@ -126,49 +140,88 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
 
   if (!batch) return null;
 
+  const isLoadingToday = status === 'loading-today';
+  const isLoadingError = status === 'loading-error';
+  const isLoading      = isLoadingToday || isLoadingError;
+  const hasResult      = status === 'success';
+  const hasError       = status === 'error';
+
+  const logTypeLabel = activeLogType === 'error'
+    ? 'Bus Error Log'
+    : "Today's Log";
+
   return (
     <Box>
       <Divider sx={{ my: 2 }} />
 
-      {/* Section header + trigger button */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-        <Typography
-          variant="caption"
-          fontWeight={700}
-          color="text.secondary"
-          sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-        >
-          Remote Logs
-        </Typography>
+      {/* Section title */}
+      <Typography
+        variant="caption"
+        fontWeight={700}
+        color="text.secondary"
+        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', mb: 1.25 }}
+      >
+        Remote Logs
+      </Typography>
 
+      {/* Two action buttons side by side */}
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+
+        {/* Get Logs — today's dated .log file */}
         <Button
           size="small"
           variant="contained"
-          startIcon={status === 'loading' ? <CircularProgress size={14} color="inherit" /> : <DownloadIcon fontSize="small" />}
-          onClick={handleFetch}
-          disabled={status === 'loading'}
-          sx={{ minWidth: 100 }}
+          startIcon={
+            isLoadingToday
+              ? <CircularProgress size={14} color="inherit" />
+              : <ArticleIcon fontSize="small" />
+          }
+          onClick={() => handleFetch('today')}
+          disabled={isLoading}
+          sx={{ minWidth: 110 }}
         >
-          {status === 'loading' ? 'Fetching…' : 'Get Logs'}
+          {isLoadingToday ? 'Fetching…' : 'Get Logs'}
         </Button>
+
+        {/* Get Error Logs — *BatchName*_Bus_Error.log */}
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          startIcon={
+            isLoadingError
+              ? <CircularProgress size={14} color="inherit" />
+              : <ErrorOutlineIcon fontSize="small" />
+          }
+          onClick={() => handleFetch('error')}
+          disabled={isLoading}
+          sx={{ minWidth: 140 }}
+        >
+          {isLoadingError ? 'Fetching…' : 'Get Error Logs'}
+        </Button>
+
       </Box>
 
-      {/* Error state */}
-      <Collapse in={status === 'error'}>
-        <Alert severity="error" sx={{ mb: 1 }} onClose={() => setStatus('idle')}>
+      {/* Error alert */}
+      <Collapse in={hasError}>
+        <Alert
+          severity="error"
+          sx={{ mt: 1.5 }}
+          onClose={() => setStatus('idle')}
+        >
           {errMsg}
         </Alert>
       </Collapse>
 
       {/* Log output */}
-      <Collapse in={status === 'success'}>
-        <LogPanel content={logText} />
+      <Collapse in={hasResult}>
+        <LogPanel content={logText} logTypeLabel={logTypeLabel} />
       </Collapse>
 
       {/* Idle hint */}
       {status === 'idle' && (
-        <Typography variant="caption" color="text.secondary">
-          Click "Get Logs" to fetch the last 500 lines from the remote server.
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+          "Get Logs" fetches today's log · "Get Error Logs" fetches the Bus Error log.
         </Typography>
       )}
     </Box>

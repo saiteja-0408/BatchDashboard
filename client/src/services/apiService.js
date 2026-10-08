@@ -119,22 +119,38 @@ export async function fetchStatusReportFresh() {
   return res.data;
 }
 
+/** Shared axios config for SSH-backed log endpoints (slower than in-memory calls). */
+const LOG_REQUEST_CONFIG = {
+  timeout: 30_000,
+  responseType: 'text',
+  transformResponse: [(data) => data],  // prevent axios from JSON-parsing plain text
+};
+
 /**
- * Fetches the log file tail for a batch via SSH on the backend.
- * The server SSHs into the remote batch server using credentials in .env
- * and returns the log content as plain text.
+ * Fetches today's dated log file for a batch via SSH on the backend.
+ * Resolves to: <BatchName><MM-DD-YYYY>.log in the batch's log directory.
  *
- * @param {string} name           - batchName
+ * @param {string} name            - batchName
  * @param {string|undefined} sheet - 'benefits' | 'tax' | undefined
- * @param {number} [lines]        - Override tail depth (default: server-configured 500)
- * @returns {Promise<string>}     - Raw log text
+ * @param {number} [lines]         - Override tail depth (default: server-configured 500)
+ * @returns {Promise<string>}      - Raw log text
  */
 export async function fetchBatchLogs(name, sheet, lines) {
-  const res = await client.get(API_PATHS.batchLogs(name, sheet, lines), {
-    timeout: 30_000,            // SSH can be slower than in-memory calls
-    responseType: 'text',
-    transformResponse: [(data) => data],  // prevent axios from JSON-parsing plain text
-  });
+  const res = await client.get(API_PATHS.batchLogs(name, sheet, lines), LOG_REQUEST_CONFIG);
+  return res.data;
+}
+
+/**
+ * Fetches the Bus Error log file for a batch via SSH on the backend.
+ * Resolves to: *<BatchName>*_Bus_Error.log (excludes _Bus_Error_Internal.log).
+ *
+ * @param {string} name            - batchName
+ * @param {string|undefined} sheet - 'benefits' | 'tax' | undefined
+ * @param {number} [lines]         - Override tail depth (default: server-configured 500)
+ * @returns {Promise<string>}      - Raw log text
+ */
+export async function fetchBatchErrorLogs(name, sheet, lines) {
+  const res = await client.get(API_PATHS.batchErrorLogs(name, sheet, lines), LOG_REQUEST_CONFIG);
   return res.data;
 }
 
