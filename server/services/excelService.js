@@ -190,7 +190,10 @@ async function loadFromFile(filePath) {
  * @returns {import('../models/batchModel').BatchModel[]}
  */
 function getAll(sheetSource) {
-  if (sheetSource) return _store.filter((b) => b.sheetSource === sheetSource);
+  if (sheetSource) {
+    const src = String(sheetSource).toLowerCase().trim();
+    return _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === src);
+  }
   return [..._store];
 }
 
@@ -202,9 +205,10 @@ function getAll(sheetSource) {
  * @returns {import('../models/batchModel').BatchModel | undefined}
  */
 function getByName(name, sheetSource) {
+  const src = sheetSource ? String(sheetSource).toLowerCase().trim() : null;
   return _store.find((b) =>
     b.batchName === name &&
-    (!sheetSource || b.sheetSource === sheetSource)
+    (!src || (b.sheetSource || '').toLowerCase().trim() === src)
   );
 }
 
@@ -218,9 +222,14 @@ function getByName(name, sheetSource) {
  */
 function search(query, sheetSource) {
   const q = query.toLowerCase().trim();
-  if (!q) return sheetSource ? _store.filter((b) => b.sheetSource === sheetSource) : [..._store];
+  const src = sheetSource ? String(sheetSource).toLowerCase().trim() : null;
+  if (!q) {
+    return src
+      ? _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === src)
+      : [..._store];
+  }
   return _store.filter((b) => {
-    if (sheetSource && b.sheetSource !== sheetSource) return false;
+    if (src && (b.sheetSource || '').toLowerCase().trim() !== src) return false;
     return (
       (b.batchName     || '').toLowerCase().includes(q) ||
       (b.scheduleName  || '').toLowerCase().includes(q) ||
@@ -236,8 +245,9 @@ function search(query, sheetSource) {
  * @returns {import('../models/batchModel').BatchModel[]}
  */
 function filter(filters) {
+  const src = filters.sheetSource ? String(filters.sheetSource).toLowerCase().trim() : null;
   return _store.filter((b) => {
-    if (filters.sheetSource && b.sheetSource !== filters.sheetSource) return false;
+    if (src && (b.sheetSource || '').toLowerCase().trim() !== src) return false;
     return true;
   });
 }
@@ -248,8 +258,8 @@ function filter(filters) {
  */
 function getSummary() {
   const total    = _store.length;
-  const benefits = _store.filter((b) => b.sheetSource === 'benefits').length;
-  const tax      = _store.filter((b) => b.sheetSource === 'tax').length;
+  const benefits = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'benefits').length;
+  const tax      = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'tax').length;
 
   const bySheet = { Benefits: benefits, Tax: tax };
 
@@ -269,21 +279,22 @@ function getSummary() {
  *
  * @param {'benefits'|'tax'} sheetSource
  * @param {Buffer} buffer - raw .xlsx/.xls file contents
- * @returns {Promise<{ count: number, warnings: string[] }>}
+ * @returns {Promise<{ count: number, warnings: string[], batches: import('../models/batchModel').BatchModel[] }>}
  */
 async function reloadSheet(sheetSource, buffer) {
-  const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, sheetSource);
+  const normSheet = String(sheetSource).toLowerCase().trim();
+  const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, normSheet);
 
   // Ensure all incoming batches belong to the requested sheetSource and have the right logDir
   const incoming = batches.map((b) => ({
     ...b,
-    sheetSource,
-    logDir: b.logDir || (sheetSource === 'tax' ? 'cd /opt/app/accessms/bin/tax/batch/' : 'cd /opt/app/accessms/bin/benefits/batch'),
+    sheetSource: normSheet,
+    logDir: b.logDir || (normSheet === 'tax' ? 'cd /opt/app/accessms/bin/tax/batch/' : 'cd /opt/app/accessms/bin/benefits/batch'),
   }));
 
   if (incoming.length === 0) {
     const err = new Error(
-      `Uploaded file contains no valid batch rows for the "${sheetSource}" sheet. ` +
+      `Uploaded file contains no valid batch rows for the "${normSheet}" sheet. ` +
       'Make sure the first sheet contains valid data rows with batch job entries.'
     );
     err.status = 422;
@@ -292,33 +303,33 @@ async function reloadSheet(sheetSource, buffer) {
 
   // Atomically replace only the target sheet's rows; preserve the other sheet
   _store = [
-    ..._store.filter((b) => b.sheetSource !== sheetSource),
+    ..._store.filter((b) => (b.sheetSource || '').toLowerCase().trim() !== normSheet),
     ...incoming,
   ];
 
   // Persist uploaded buffer to configured target Excel file on disk (cross-platform path resolution)
   try {
-    const targetFile = getTargetFilePath(sheetSource);
+    const targetFile = getTargetFilePath(normSheet);
     const targetDir = path.dirname(targetFile);
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
     fs.writeFileSync(targetFile, buffer);
     if (fs.existsSync(targetFile)) {
-      _fileMtimes[sheetSource] = fs.statSync(targetFile).mtimeMs;
+      _fileMtimes[normSheet] = fs.statSync(targetFile).mtimeMs;
     }
   } catch (fsErr) {
     console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
   }
 
-  const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
-  const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
+  const bCount = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'benefits').length;
+  const tCount = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'tax').length;
   console.log(
-    `[excelService] Reloaded "${sheetSource}" sheet from upload: ` +
+    `[excelService] Reloaded "${normSheet}" sheet from upload: ` +
     `${incoming.length} row(s). Store now: ${_store.length} total ` +
     `(${bCount} Benefits, ${tCount} Tax).`
   );
-  return { count: incoming.length, warnings };
+  return { count: incoming.length, warnings, batches: incoming };
 }
 
 /**

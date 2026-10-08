@@ -26,7 +26,7 @@ import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab'
 
 import { useBatchContext }   from '../context/BatchContext';
 import { useAllBatches }     from '../hooks/useBatches';
-import { uploadSheet }       from '../services/apiService';
+import { uploadSheet, fetchAllBatches } from '../services/apiService';
 import { useStatusReport }   from '../hooks/useStatusReport';
 
 export default function Dashboard() {
@@ -107,16 +107,12 @@ export default function Dashboard() {
     setUploading(true);
     try {
       const result = await uploadSheet(activeSheet, file);
-      // Write null into the cache WITHOUT destroying the query or its observers.
-      // removeQueries / fetchQuery was wrong: removeQueries calls query.destroy()
-      // which detaches all useQuery observers from the query object; the new query
-      // created by fetchQuery has no observers so the component never re-renders
-      // with the fresh data until an unrelated state change triggers a re-render.
-      // setQueryData(null) keeps the observer alive and marks the entry as stale.
-      queryClient.setQueryData(['batches', 'all'], null);
-      // Fetch fresh data through the live observer so useAllBatches.data updates
-      // as soon as the request completes.
-      await queryClient.refetchQueries({ queryKey: ['batches', 'all'], exact: true, type: 'all' });
+      // Immediately fetch fresh batch data and populate cache to ensure rows render immediately
+      const freshBatches = await fetchAllBatches();
+      if (Array.isArray(freshBatches)) {
+        queryClient.setQueryData(['batches', 'all'], freshBatches);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['batches'] });
       setSnackbar({
         open:     true,
         message:  result.message || `Uploaded successfully — ${result.count} batch(es) loaded.`,
@@ -266,7 +262,7 @@ export default function Dashboard() {
               <SearchBar />
             </Box>
 
-            <Box sx={{ flex: 1, minHeight: 0 }}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <BatchTable
                 batches={filteredBatches}
                 isLoading={isLoading}

@@ -309,11 +309,12 @@ export function BatchTable({ batches, isLoading, isError }) {
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   // ── Virtual window calculation ────────────────────────────────────────────
-  const totalCount    = sortedData.length;
-  const startIndex    = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
-  const endIndex      = Math.min(
+  const totalCount      = sortedData.length;
+  const effectiveHeight = tableHeight > 0 ? tableHeight : 600;
+  const startIndex      = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
+  const endIndex        = Math.min(
     totalCount,
-    Math.ceil((scrollTop + tableHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
+    Math.ceil((scrollTop + effectiveHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
   );
   const paddingTop    = startIndex * VIRTUAL_ROW_HEIGHT;
   const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);

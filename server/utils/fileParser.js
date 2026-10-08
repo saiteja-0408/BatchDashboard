@@ -21,108 +21,32 @@ const XLSX = require('xlsx');
 const { COLUMN_MAP, SHEET_LOG_PATHS } = require('../config/columnMapping.config');
 
 /**
- * Universal fallback parsing using XLSX library (SheetJS).
- * Supports .xls, .xlsx, .xlsm, .xlsb, and other spreadsheet formats.
- * Always targets the FIRST worksheet (index 0) when defaultSheetSource is provided.
+ * Extracts clean string text from any Excel cell value.
+ * Handles strings, numbers, booleans, dates, richText arrays, formulas with result,
+ * hyperlinks, and error objects safely.
  *
- * @param {Buffer|string} source - Buffer or file path
- * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
- * @returns {{ rows: Object[], warnings: string[] }}
+ * @param {any} val
+ * @returns {string}
  */
-function parseWithXLSXLibrary(source, defaultSheetSource = null) {
-  const warnings = [];
-  const allRows = [];
-
-  const readOptions = {
-    type: Buffer.isBuffer(source) ? 'buffer' : 'file',
-    cellDates: true,
-    cellText: false,
-    raw: false,
-    dense: false,
-  };
-
-  const workbook = typeof source === 'string'
-    ? XLSX.readFile(source, readOptions)
-    : XLSX.read(source, readOptions);
-
-  if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
-    return { rows: [], warnings: ['Workbook contains no sheets.'] };
+function getCellText(val) {
+  if (val === null || val === undefined) return '';
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === 'object') {
+    if (Array.isArray(val.richText)) {
+      return val.richText.map((r) => r.text || '').join('').trim();
+    }
+    if (val.result !== undefined && val.result !== null) {
+      return getCellText(val.result);
+    }
+    if (val.text !== undefined && val.text !== null) {
+      return String(val.text).trim();
+    }
+    if (val.hyperlink) {
+      return String(val.text || val.hyperlink).trim();
+    }
+    if (val.error) return '';
   }
-
-  // When targeting a specific sheet source, always process the FIRST sheet (index 0)
-  const sheetNamesToProcess = defaultSheetSource
-    ? [workbook.SheetNames[0]]
-    : workbook.SheetNames;
-
-  for (const sheetName of sheetNamesToProcess) {
-    const sheetSource = defaultSheetSource || detectSheetSource(sheetName, null);
-    if (!sheetSource) {
-      warnings.push(`Sheet "${sheetName}" is not a recognised Benefits or Tax sheet — skipped.`);
-      continue;
-    }
-
-    const worksheet = workbook.Sheets[sheetName];
-    if (!worksheet) continue;
-
-    // Convert sheet to 2D array of raw values
-    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', blankrows: false });
-    if (!sheetData || sheetData.length === 0) {
-      warnings.push(`Sheet "${sheetName}" has no data rows — skipped.`);
-      continue;
-    }
-
-    // Row 0 is header row
-    const headerRow = sheetData[0];
-    const headerIndex = {};
-
-    headerRow.forEach((cellVal, colIdx) => {
-      const rawText = String(cellVal || '').trim();
-      const fieldName = matchHeaderField(rawText);
-      if (fieldName) {
-        headerIndex[colIdx] = fieldName;
-      }
-    });
-
-    // Positional fallback if no batchName header was identified
-    const mappedFields = Object.values(headerIndex).filter(Boolean);
-    if (!mappedFields.includes('batchName')) {
-      headerIndex[0] = 'batchName';
-      if (headerRow.length > 1 && !mappedFields.includes('scheduleName')) {
-        headerIndex[1] = headerRow.length === 2 ? 'scheduleName' : 'arguments';
-      }
-      if (headerRow.length > 2 && !mappedFields.includes('scheduleName')) {
-        headerIndex[2] = 'scheduleName';
-      }
-      if (headerRow.length > 3 && !mappedFields.includes('triggerNeeded')) {
-        headerIndex[3] = 'triggerNeeded';
-      }
-    }
-
-    const logDir = SHEET_LOG_PATHS[sheetSource] || '';
-
-    // Data rows start from index 1
-    for (let r = 1; r < sheetData.length; r++) {
-      const row = sheetData[r];
-      if (!row || row.length === 0) continue;
-
-      const mapped = { sheetSource, logDir, batchName: '', arguments: '', scheduleName: '', triggerNeeded: '' };
-      let hasValue = false;
-
-      row.forEach((cellVal, colIdx) => {
-        const fieldName = headerIndex[colIdx];
-        if (!fieldName) return;
-        const cleanVal = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : '';
-        mapped[fieldName] = cleanVal;
-        if (cleanVal) hasValue = true;
-      });
-
-      if (hasValue && mapped.batchName) {
-        allRows.push(mapped);
-      }
-    }
-  }
-
-  return { rows: allRows, warnings };
+  return String(val).trim();
 }
 
 /**
@@ -170,13 +94,13 @@ function matchHeaderField(rawHeader) {
   }
 
   // Heuristic substring match
-  if (key.includes('batchname') || key.includes('jobname') || key.startsWith('batch') || key.startsWith('job')) {
+  if (key.includes('batchname') || key.includes('jobname') || key.startsWith('batch') || key.startsWith('job') || key.includes('process') || key.includes('program')) {
     return 'batchName';
   }
-  if (key.includes('argument') || key.includes('jvm') || key.includes('args')) {
+  if (key.includes('argument') || key.includes('jvm') || key.includes('args') || key.includes('param') || key.includes('flag') || key.includes('option')) {
     return 'arguments';
   }
-  if (key.includes('schedule') || key.includes('jobgroup') || key.includes('sched')) {
+  if (key.includes('schedule') || key.includes('jobgroup') || key.includes('sched') || key.includes('cron') || key.includes('frequency') || key.includes('timing') || key.includes('group')) {
     return 'scheduleName';
   }
   if (key.includes('trigger')) {
@@ -202,12 +126,145 @@ function detectSheetSource(sheetName, defaultSheetSource = null) {
 }
 
 /**
- * Internal: walks sheets in a loaded ExcelJS Workbook and returns rows.
- * When defaultSheetSource is specified (e.g. Benefits or Tax file/upload), always reads
- * the first sheet (index 0) of the workbook regardless of its name.
- * If defaultSheetSource is not provided, processes all sheets and identifies Benefits/Tax by name.
+ * Universal fallback parsing using XLSX library (SheetJS).
+ * Supports .xls, .xlsx, .xlsm, .xlsb, and other spreadsheet formats.
  *
- * Shared by both parseExcelFile and parseExcelBuffer.
+ * @param {Buffer|string} source - Buffer or file path
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
+ * @returns {{ rows: Object[], warnings: string[] }}
+ */
+function parseWithXLSXLibrary(source, defaultSheetSource = null) {
+  const warnings = [];
+  const allRows = [];
+
+  const readOptions = {
+    type: Buffer.isBuffer(source) ? 'buffer' : 'file',
+    cellDates: true,
+    cellText: false,
+    raw: false,
+    dense: false,
+  };
+
+  const workbook = typeof source === 'string'
+    ? XLSX.readFile(source, readOptions)
+    : XLSX.read(source, readOptions);
+
+  if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+    return { rows: [], warnings: ['Workbook contains no sheets.'] };
+  }
+
+  // When targeting a specific sheet source, search for a sheet matching by name first
+  let sheetNamesToProcess = workbook.SheetNames;
+  if (defaultSheetSource) {
+    const matchingSheet = workbook.SheetNames.find((name) =>
+      detectSheetSource(name, null) === defaultSheetSource
+    );
+    if (matchingSheet) {
+      sheetNamesToProcess = [matchingSheet];
+    } else {
+      // Find the first sheet that has non-empty rows
+      const nonEmptySheet = workbook.SheetNames.find((name) => {
+        const ws = workbook.Sheets[name];
+        if (!ws) return false;
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });
+        return data && data.length > 0;
+      }) || workbook.SheetNames[0];
+      sheetNamesToProcess = [nonEmptySheet];
+    }
+  }
+
+  for (const sheetName of sheetNamesToProcess) {
+    const sheetSource = defaultSheetSource || detectSheetSource(sheetName, null);
+    if (!sheetSource) {
+      warnings.push(`Sheet "${sheetName}" is not a recognised Benefits or Tax sheet — skipped.`);
+      continue;
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
+
+    // Convert sheet to 2D array of raw values
+    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', blankrows: false });
+    if (!sheetData || sheetData.length === 0) {
+      warnings.push(`Sheet "${sheetName}" has no data rows — skipped.`);
+      continue;
+    }
+
+    // Find the header row by checking top 10 rows for matching column names
+    let headerRowIndex = 0;
+    let bestMatchCount = 0;
+    let headerIndex = {};
+
+    const maxHeaderScan = Math.min(10, sheetData.length);
+    for (let r = 0; r < maxHeaderScan; r++) {
+      const candidateRow = sheetData[r];
+      if (!candidateRow || candidateRow.length === 0) continue;
+
+      const currentHeaderIndex = {};
+      let matchCount = 0;
+
+      candidateRow.forEach((cellVal, colIdx) => {
+        const text = getCellText(cellVal);
+        const fieldName = matchHeaderField(text);
+        if (fieldName) {
+          currentHeaderIndex[colIdx] = fieldName;
+          matchCount++;
+        }
+      });
+
+      if (matchCount > bestMatchCount) {
+        bestMatchCount = matchCount;
+        headerRowIndex = r;
+        headerIndex = currentHeaderIndex;
+      }
+    }
+
+    // Positional fallback if no batchName header was identified
+    const mappedFields = Object.values(headerIndex).filter(Boolean);
+    if (!mappedFields.includes('batchName')) {
+      const headerRow = sheetData[headerRowIndex] || [];
+      headerIndex[0] = 'batchName';
+      if (headerRow.length > 1 && !mappedFields.includes('scheduleName')) {
+        headerIndex[1] = headerRow.length === 2 ? 'scheduleName' : 'arguments';
+      }
+      if (headerRow.length > 2 && !mappedFields.includes('scheduleName')) {
+        headerIndex[2] = 'scheduleName';
+      }
+      if (headerRow.length > 3 && !mappedFields.includes('triggerNeeded')) {
+        headerIndex[3] = 'triggerNeeded';
+      }
+    }
+
+    const logDir = SHEET_LOG_PATHS[sheetSource] || '';
+
+    // Data rows start immediately after the header row
+    for (let r = headerRowIndex + 1; r < sheetData.length; r++) {
+      const row = sheetData[r];
+      if (!row || row.length === 0) continue;
+
+      const mapped = { sheetSource, logDir, batchName: '', arguments: '', scheduleName: '', triggerNeeded: '' };
+      let hasValue = false;
+
+      row.forEach((cellVal, colIdx) => {
+        const fieldName = headerIndex[colIdx];
+        if (!fieldName) return;
+        const cleanVal = getCellText(cellVal);
+        mapped[fieldName] = cleanVal;
+        if (cleanVal) hasValue = true;
+      });
+
+      if (hasValue && mapped.batchName) {
+        allRows.push(mapped);
+      }
+    }
+  }
+
+  return { rows: allRows, warnings };
+}
+
+/**
+ * Internal: walks sheets in a loaded ExcelJS Workbook and returns rows.
+ * Detects matching sheet name or first non-empty sheet when defaultSheetSource is provided.
  *
  * @param {ExcelJS.Workbook} workbook
  * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
@@ -221,11 +278,20 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
     return { rows: [], warnings: ['Workbook contains no sheets.'] };
   }
 
-  // When targeting a specific sheet source (Benefits or Tax file read / upload),
-  // always process the FIRST sheet (index 0) regardless of the sheet's name.
-  const sheetsToProcess = defaultSheetSource
-    ? [workbook.worksheets[0]]
-    : workbook.worksheets;
+  // When targeting a specific sheet source, search for a sheet matching by name first
+  let sheetsToProcess = workbook.worksheets;
+  if (defaultSheetSource) {
+    const matchingSheet = workbook.worksheets.find((ws) =>
+      detectSheetSource(ws.name, null) === defaultSheetSource
+    );
+    if (matchingSheet) {
+      sheetsToProcess = [matchingSheet];
+    } else {
+      // Find the first sheet that has rows/data
+      const nonEmptySheet = workbook.worksheets.find((ws) => ws.rowCount > 1) || workbook.worksheets[0];
+      sheetsToProcess = [nonEmptySheet];
+    }
+  }
 
   sheetsToProcess.forEach((sheet) => {
     const sheetName = sheet.name;
@@ -236,26 +302,36 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
       return;
     }
 
-    // ── Parse header row (row 1) ──────────────────────────────────────────
-    const headerRow = sheet.getRow(1);
-    if (!headerRow || headerRow.cellCount === 0) {
-      warnings.push(`Sheet "${sheetName}" has no header row — skipped.`);
-      return;
+    // Find the header row by scanning rows 1 through 10 for matching column names
+    let headerRowNumber = 1;
+    let bestMatchCount = 0;
+    let headerIndex = {};
+
+    const maxHeaderScan = Math.min(10, sheet.rowCount || 10);
+    for (let r = 1; r <= maxHeaderScan; r++) {
+      const candidateRow = sheet.getRow(r);
+      if (!candidateRow || candidateRow.cellCount === 0) continue;
+
+      const currentHeaderIndex = {};
+      let matchCount = 0;
+
+      candidateRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+        const text = getCellText(cell.value);
+        const fieldName = matchHeaderField(text);
+        if (fieldName) {
+          currentHeaderIndex[colNum] = fieldName;
+          matchCount++;
+        }
+      });
+
+      if (matchCount > bestMatchCount) {
+        bestMatchCount = matchCount;
+        headerRowNumber = r;
+        headerIndex = currentHeaderIndex;
+      }
     }
 
-    // headerIndex: column number → internal field name (null if not mapped)
-    const headerIndex = {};
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
-      const raw = cell.value;
-      const rawText = raw && typeof raw === 'object' && raw.richText
-        ? raw.richText.map((r) => r.text).join('')
-        : String(raw || '');
-      const fieldName = matchHeaderField(rawText);
-      headerIndex[colNum] = fieldName;
-    });
-
-    // Fallback if header row didn't map batchName by name (e.g. headerless or unexpected custom titles):
-    // If no batchName column found among mapped columns, default Column 1 -> batchName, Column 2 -> arguments/schedule, etc.
+    // Fallback if no batchName column found among mapped columns
     const mappedFields = Object.values(headerIndex).filter(Boolean);
     if (!mappedFields.includes('batchName')) {
       const colNums = Object.keys(headerIndex).map(Number).sort((a, b) => a - b);
@@ -275,9 +351,9 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
 
     const logDir = SHEET_LOG_PATHS[sheetSource] || '';
 
-    // ── Parse data rows (row 2 onwards) ──────────────────────────────────
+    // ── Parse data rows (rows after the header row) ──────────────────────
     sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return; // skip header
+      if (rowNumber <= headerRowNumber) return; // skip header and any rows above header
 
       const mapped   = { sheetSource, logDir };
       let   hasValue = false;
@@ -286,16 +362,9 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
         const fieldName = headerIndex[colNum];
         if (!fieldName) return;
 
-        let val = cell.value;
-        // Unwrap ExcelJS rich-text objects
-        if (val && typeof val === 'object' && val.richText) {
-          val = val.richText.map((r) => r.text).join('');
-        }
-        // Unwrap date objects
-        if (val instanceof Date) val = val.toISOString();
-
-        mapped[fieldName] = val !== null && val !== undefined ? String(val).trim() : '';
-        if (mapped[fieldName]) hasValue = true;
+        const cleanVal = getCellText(cell.value);
+        mapped[fieldName] = cleanVal;
+        if (cleanVal) hasValue = true;
       });
 
       // Fill default absent fields
