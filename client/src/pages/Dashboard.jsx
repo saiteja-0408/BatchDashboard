@@ -26,7 +26,7 @@ import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab'
 
 import { useBatchContext }   from '../context/BatchContext';
 import { useAllBatches }     from '../hooks/useBatches';
-import { uploadSheet, fetchAllBatches } from '../services/apiService';
+import { uploadSheet }       from '../services/apiService';
 import { useStatusReport }   from '../hooks/useStatusReport';
 
 export default function Dashboard() {
@@ -107,15 +107,16 @@ export default function Dashboard() {
     setUploading(true);
     try {
       const result = await uploadSheet(activeSheet, file);
-      // 1. Remove the stale cache entry so React Query treats the next fetch
-      //    as a cold load — no staleTime check, no partial data flash.
-      queryClient.removeQueries({ queryKey: ['batches', 'all'], exact: true });
-      // 2. Trigger a fresh fetch and await its completion so the table is
-      //    populated before the success snackbar appears.
-      await queryClient.fetchQuery({
-        queryKey: ['batches', 'all'],
-        queryFn:  () => fetchAllBatches(),
-      });
+      // Write null into the cache WITHOUT destroying the query or its observers.
+      // removeQueries / fetchQuery was wrong: removeQueries calls query.destroy()
+      // which detaches all useQuery observers from the query object; the new query
+      // created by fetchQuery has no observers so the component never re-renders
+      // with the fresh data until an unrelated state change triggers a re-render.
+      // setQueryData(null) keeps the observer alive and marks the entry as stale.
+      queryClient.setQueryData(['batches', 'all'], null);
+      // Fetch fresh data through the live observer so useAllBatches.data updates
+      // as soon as the request completes.
+      await queryClient.refetchQueries({ queryKey: ['batches', 'all'], exact: true, type: 'all' });
       setSnackbar({
         open:     true,
         message:  result.message || `Uploaded successfully — ${result.count} batch(es) loaded.`,
