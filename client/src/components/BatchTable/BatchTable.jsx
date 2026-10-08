@@ -311,10 +311,12 @@ export function BatchTable({ batches, isLoading, isError }) {
   // ── Virtual window calculation ────────────────────────────────────────────
   const totalCount      = sortedData.length;
   const effectiveHeight = tableHeight > 0 ? tableHeight : 600;
-  const startIndex      = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
+  const maxScroll       = Math.max(0, totalCount * VIRTUAL_ROW_HEIGHT - effectiveHeight);
+  const clampedScrollTop = Math.min(scrollTop, maxScroll);
+  const startIndex      = Math.max(0, Math.floor(clampedScrollTop / VIRTUAL_ROW_HEIGHT) - OVERSCAN_COUNT);
   const endIndex        = Math.min(
     totalCount,
-    Math.ceil((scrollTop + effectiveHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
+    Math.ceil((clampedScrollTop + effectiveHeight) / VIRTUAL_ROW_HEIGHT) + OVERSCAN_COUNT
   );
   const paddingTop    = startIndex * VIRTUAL_ROW_HEIGHT;
   const paddingBottom = Math.max(0, (totalCount - endIndex) * VIRTUAL_ROW_HEIGHT);
@@ -351,9 +353,9 @@ export function BatchTable({ batches, isLoading, isError }) {
     if (isLoading) return <Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2 }} />;
     return (
       <Box>
-        {sortedData.map((b) => (
+        {sortedData.map((b, idx) => (
           <BatchCard
-            key={b.batchName}
+            key={`${b.sheetSource || activeSheet}-${b.batchName || 'batch'}-${idx}`}
             batch={b}
             currentTask={SHOW_CURRENT_TASK ? currentTaskMap[b.batchName] : undefined}
             onClick={openBatchModal}
@@ -411,9 +413,9 @@ export function BatchTable({ batches, isLoading, isError }) {
                   <TableCell colSpan={columnCount} sx={{ ...SPACER_CELL_SX, height: paddingTop }} />
                 </TableRow>
               )}
-              {visibleBatches.map((batch) => (
+              {visibleBatches.map((batch, idx) => (
                 <BatchRow
-                  key={batch.batchName}
+                  key={`${batch.sheetSource || activeSheet}-${batch.batchName || 'batch'}-${startIndex + idx}`}
                   batch={batch}
                   currentTask={SHOW_CURRENT_TASK ? currentTaskMap[batch.batchName] : undefined}
                   ctLoading={ctLoading}

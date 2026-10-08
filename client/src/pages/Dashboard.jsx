@@ -86,13 +86,37 @@ export default function Dashboard() {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return allBatches;
 
-    return allBatches.filter((b) =>
-      // Guard every field with (|| '') — null/undefined never throws TypeError.
-      (b.batchName     || '').toLowerCase().includes(q) ||
-      (b.scheduleName  || '').toLowerCase().includes(q) ||
-      (b.arguments     || '').toLowerCase().includes(q) ||
-      (b.triggerNeeded || '').toLowerCase().includes(q)
-    );
+    const matches = [];
+    for (const b of allBatches) {
+      const bName = (b.batchName || '').toLowerCase();
+      const sName = (b.scheduleName || '').toLowerCase();
+      const args  = (b.arguments || '').toLowerCase();
+      const trig  = (b.triggerNeeded || '').toLowerCase();
+
+      let score = 0;
+      if (bName === q) {
+        score = 100;
+      } else if (bName.startsWith(q)) {
+        score = 80;
+      } else if (bName.includes(q)) {
+        score = 60;
+      } else if (sName.startsWith(q)) {
+        score = 40;
+      } else if (sName.includes(q)) {
+        score = 30;
+      } else if (args.includes(q)) {
+        score = 20;
+      } else if (trig.includes(q)) {
+        score = 10;
+      }
+
+      if (score > 0) {
+        matches.push({ batch: b, score });
+      }
+    }
+
+    matches.sort((a, b) => b.score - a.score);
+    return matches.map((m) => m.batch);
   }, [allBatches, searchQuery, isStatusReportTab]);
 
   const lastUpdated = dataUpdatedAt
@@ -119,18 +143,22 @@ export default function Dashboard() {
     try {
       const result = await uploadSheet(activeSheet, file);
       if (result && result.success) {
+        // Invalidate and refetch queries immediately so the new rows display instantaneously
+        await queryClient.invalidateQueries({ queryKey: ['batches'] });
+        await queryClient.refetchQueries({ queryKey: ['batches'] });
+
         try {
-          sessionStorage.setItem(
-            'batch_dashboard_upload_success',
-            result.message || `"${activeSheet}" sheet reloaded successfully — ${result.count} batch(es) loaded.`
-          );
           sessionStorage.setItem('batch_dashboard_active_sheet', activeSheet);
           localStorage.setItem('batch_dashboard_active_sheet', activeSheet);
         } catch {
           // Ignore storage errors
         }
-        // Trigger hard refresh on confirmed upload success so full application state reloads
-        window.location.reload();
+
+        setSnackbar({
+          open:     true,
+          message:  result.message || `"${activeSheet}" sheet reloaded successfully — ${result.count} batch(es) loaded.`,
+          severity: 'success',
+        });
       }
     } catch (err) {
       setSnackbar({
@@ -138,9 +166,10 @@ export default function Dashboard() {
         message:  err.message || 'Upload failed. Please check the file and try again.',
         severity: 'error',
       });
+    } finally {
       setUploading(false);
     }
-  }, [activeSheet]);
+  }, [activeSheet, queryClient]);
 
   const handleSnackbarClose = useCallback((_, reason) => {
     if (reason === 'clickaway') return;

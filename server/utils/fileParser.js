@@ -337,15 +337,21 @@ function _extractRowsFromWorkbook(workbook, defaultSheetSource = null) {
       const colNums = Object.keys(headerIndex).map(Number).sort((a, b) => a - b);
       if (colNums.length > 0) {
         headerIndex[colNums[0]] = 'batchName';
-      }
-      if (colNums.length > 1 && !mappedFields.includes('scheduleName')) {
-        headerIndex[colNums[1]] = colNums.length === 2 ? 'scheduleName' : 'arguments';
-      }
-      if (colNums.length > 2 && !mappedFields.includes('scheduleName')) {
-        headerIndex[colNums[2]] = 'scheduleName';
-      }
-      if (colNums.length > 3 && !mappedFields.includes('triggerNeeded')) {
-        headerIndex[colNums[3]] = 'triggerNeeded';
+        if (colNums.length > 1 && !mappedFields.includes('scheduleName')) {
+          headerIndex[colNums[1]] = colNums.length === 2 ? 'scheduleName' : 'arguments';
+        }
+        if (colNums.length > 2 && !mappedFields.includes('scheduleName')) {
+          headerIndex[colNums[2]] = 'scheduleName';
+        }
+        if (colNums.length > 3 && !mappedFields.includes('triggerNeeded')) {
+          headerIndex[colNums[3]] = 'triggerNeeded';
+        }
+      } else {
+        // No headers identified at all — use default positional columns (1-based for ExcelJS)
+        headerIndex[1] = 'batchName';
+        headerIndex[2] = 'arguments';
+        headerIndex[3] = 'scheduleName';
+        headerIndex[4] = 'triggerNeeded';
       }
     }
 

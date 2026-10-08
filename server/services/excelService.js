@@ -221,20 +221,43 @@ function getByName(name, sheetSource) {
 function search(query, sheetSource) {
   const q = query.toLowerCase().trim();
   const src = sheetSource ? String(sheetSource).toLowerCase().trim() : null;
-  if (!q) {
-    return src
-      ? _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === src)
-      : [..._store];
+  const pool = src
+    ? _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === src)
+    : _store;
+
+  if (!q) return [...pool];
+
+  const matches = [];
+  for (const b of pool) {
+    const bName = (b.batchName || '').toLowerCase();
+    const sName = (b.scheduleName || '').toLowerCase();
+    const args  = (b.arguments || '').toLowerCase();
+    const trig  = (b.triggerNeeded || '').toLowerCase();
+
+    let score = 0;
+    if (bName === q) {
+      score = 100;
+    } else if (bName.startsWith(q)) {
+      score = 80;
+    } else if (bName.includes(q)) {
+      score = 60;
+    } else if (sName.startsWith(q)) {
+      score = 40;
+    } else if (sName.includes(q)) {
+      score = 30;
+    } else if (args.includes(q)) {
+      score = 20;
+    } else if (trig.includes(q)) {
+      score = 10;
+    }
+
+    if (score > 0) {
+      matches.push({ batch: b, score });
+    }
   }
-  return _store.filter((b) => {
-    if (src && (b.sheetSource || '').toLowerCase().trim() !== src) return false;
-    return (
-      (b.batchName     || '').toLowerCase().includes(q) ||
-      (b.scheduleName  || '').toLowerCase().includes(q) ||
-      (b.arguments     || '').toLowerCase().includes(q) ||
-      (b.triggerNeeded || '').toLowerCase().includes(q)
-    );
-  });
+
+  matches.sort((a, b) => b.score - a.score);
+  return matches.map((m) => m.batch);
 }
 
 /**
