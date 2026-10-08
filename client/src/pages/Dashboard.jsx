@@ -74,8 +74,16 @@ export default function Dashboard() {
    * Operates on allBatches (the entire sheet dataset) — never on the virtual
    * scroll window — guaranteeing 100% search accuracy across all rows.
    *
-   * Fields searched: batchName, scheduleName, arguments, triggerNeeded.
-   * Aligns with the server-side excelService.search() field set.
+   * Fields searched: batchName, scheduleName, arguments.
+   * triggerNeeded is intentionally excluded — it is a binary Y/N flag, not a
+   * text field. Including it caused false positives: any row whose triggerNeeded
+   * value happened to contain the query string (e.g. 'y' matching all Y rows)
+   * would appear in results even with no genuine text match.
+   *
+   * The scoring/sort approach is also removed: it reordered results in ways that
+   * were inconsistent with the original server-side order and the active column
+   * sort, and provided no real UX benefit for an exact substring search.
+   *
    * Not used when the Status Report tab is active.
    */
   const filteredBatches = useMemo(() => {
@@ -86,37 +94,13 @@ export default function Dashboard() {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return allBatches;
 
-    const matches = [];
-    for (const b of allBatches) {
-      const bName = (b.batchName || '').toLowerCase();
-      const sName = (b.scheduleName || '').toLowerCase();
-      const args  = (b.arguments || '').toLowerCase();
-      const trig  = (b.triggerNeeded || '').toLowerCase();
-
-      let score = 0;
-      if (bName === q) {
-        score = 100;
-      } else if (bName.startsWith(q)) {
-        score = 80;
-      } else if (bName.includes(q)) {
-        score = 60;
-      } else if (sName.startsWith(q)) {
-        score = 40;
-      } else if (sName.includes(q)) {
-        score = 30;
-      } else if (args.includes(q)) {
-        score = 20;
-      } else if (trig.includes(q)) {
-        score = 10;
-      }
-
-      if (score > 0) {
-        matches.push({ batch: b, score });
-      }
-    }
-
-    matches.sort((a, b) => b.score - a.score);
-    return matches.map((m) => m.batch);
+    // Only match against the three user-visible text fields shown in the table.
+    // Each field is guarded with (|| '') so null/undefined never throws TypeError.
+    return allBatches.filter((b) =>
+      (b.batchName    || '').toLowerCase().includes(q) ||
+      (b.scheduleName || '').toLowerCase().includes(q) ||
+      (b.arguments    || '').toLowerCase().includes(q)
+    );
   }, [allBatches, searchQuery, isStatusReportTab]);
 
   const lastUpdated = dataUpdatedAt
