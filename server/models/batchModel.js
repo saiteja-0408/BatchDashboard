@@ -58,16 +58,12 @@ function createBatch(raw) {
 }
 
 /**
- * Validates that a batch has the minimum required fields.
- * Returns an array of warning strings (empty array means valid).
- * @param {BatchModel} batch
+ * Retained for backward compatibility.
+ * Returns an empty array (no incomplete/missing data validation warnings).
  * @returns {string[]}
  */
-function validateBatch(batch) {
-  const warnings = [];
-  if (!batch.batchName)    warnings.push(`Row missing batchName — skipped.`);
-  if (!batch.scheduleName) warnings.push(`[${batch.batchName}] Missing scheduleName.`);
-  return warnings;
+function validateBatch() {
+  return [];
 }
 
 module.exports = { createBatch, validateBatch };

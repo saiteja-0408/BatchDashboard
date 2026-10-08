@@ -37,7 +37,18 @@ export default function Dashboard() {
 
   // ── Upload state ──────────────────────────────────────────────────────────
   const [uploading,    setUploading]    = useState(false);
-  const [snackbar,     setSnackbar]     = useState({ open: false, message: '', severity: 'success' });
+  const [snackbar,     setSnackbar]     = useState(() => {
+    try {
+      const msg = sessionStorage.getItem('batch_dashboard_upload_success');
+      if (msg) {
+        sessionStorage.removeItem('batch_dashboard_upload_success');
+        return { open: true, message: msg, severity: 'success' };
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return { open: false, message: '', severity: 'success' };
+  });
 
   const isStatusReportTab = activeSheet === 'status-report';
 
@@ -107,27 +118,29 @@ export default function Dashboard() {
     setUploading(true);
     try {
       const result = await uploadSheet(activeSheet, file);
-      // Immediately fetch fresh batch data and populate cache to ensure rows render immediately
-      const freshBatches = await fetchAllBatches();
-      if (Array.isArray(freshBatches)) {
-        queryClient.setQueryData(['batches', 'all'], freshBatches);
+      if (result && result.success) {
+        try {
+          sessionStorage.setItem(
+            'batch_dashboard_upload_success',
+            result.message || `"${activeSheet}" sheet reloaded successfully — ${result.count} batch(es) loaded.`
+          );
+          sessionStorage.setItem('batch_dashboard_active_sheet', activeSheet);
+          localStorage.setItem('batch_dashboard_active_sheet', activeSheet);
+        } catch {
+          // Ignore storage errors
+        }
+        // Trigger hard refresh on confirmed upload success so full application state reloads
+        window.location.reload();
       }
-      await queryClient.invalidateQueries({ queryKey: ['batches'] });
-      setSnackbar({
-        open:     true,
-        message:  result.message || `Uploaded successfully — ${result.count} batch(es) loaded.`,
-        severity: 'success',
-      });
     } catch (err) {
       setSnackbar({
         open:     true,
         message:  err.message || 'Upload failed. Please check the file and try again.',
         severity: 'error',
       });
-    } finally {
       setUploading(false);
     }
-  }, [activeSheet, queryClient]);
+  }, [activeSheet]);
 
   const handleSnackbarClose = useCallback((_, reason) => {
     if (reason === 'clickaway') return;

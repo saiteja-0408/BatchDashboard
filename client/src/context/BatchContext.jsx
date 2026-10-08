@@ -86,14 +86,23 @@ export function useBatchModal() {
 const STORAGE_TAB_KEY = 'batch_dashboard_active_sheet';
 const DEFAULT_TAB     = 'status-report';
 
+function getInitialTab() {
+  try {
+    const saved = sessionStorage.getItem(STORAGE_TAB_KEY) || localStorage.getItem(STORAGE_TAB_KEY);
+    if (saved && ['benefits', 'tax', 'status-report'].includes(saved)) {
+      return saved;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return DEFAULT_TAB;
+}
+
 export function BatchProvider({ children }) {
   // ── Data / UI state (search, active tab) ──────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
-  // Always open on the Status Report tab regardless of any previously
-  // persisted value — the stored value is kept only for within-session
-  // tab switches so the user's last tab is remembered if they navigate away
-  // and back, but on a fresh page load we always land on Status Report.
-  const [activeSheet, setActiveSheet] = useState(DEFAULT_TAB);
+  // Initialize with persisted tab so hard refresh retains the active section (Benefits / Tax / Status Report)
+  const [activeSheet, setActiveSheet] = useState(getInitialTab);
 
   // ── Modal state via reducer (single dispatch = single render pass) ─────────
   const [modalState, dispatchModal] = useReducer(modalReducer, MODAL_INITIAL);

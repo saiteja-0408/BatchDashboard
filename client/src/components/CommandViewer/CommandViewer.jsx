@@ -122,13 +122,6 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   return (
     <Stack spacing={0} divider={<Divider sx={{ my: 2 }} />}>
 
-      {/* ── Missing Schedule Alert ── */}
-      {!batch.scheduleName && (
-        <Alert severity="error" sx={{ fontSize: '0.82rem' }}>
-          No schedule name found for this batch — commands cannot be constructed.
-        </Alert>
-      )}
-
       {/* ── Change Directory ── */}
       <Section title="Change Directory">
         <CommandBlock value={batch.logDir} />

@@ -78,9 +78,7 @@ async function _parseToBatches(filePath, defaultSheetSource = null) {
 
   const batches = [];
   for (const row of rows) {
-    const batch         = createBatch(row);
-    const batchWarnings = validateBatch(batch);
-    batchWarnings.forEach((w) => console.warn(`[excelService] VALIDATION: ${w}`));
+    const batch = createBatch(row);
     if (batch.batchName) batches.push(batch);
   }
 
@@ -348,9 +346,7 @@ async function _parseToBatchesFromBuffer(buffer, defaultSheetSource) {
 
   const batches = [];
   for (const row of rows) {
-    const batch         = createBatch(row);
-    const batchWarnings = validateBatch(batch);
-    batchWarnings.forEach((w) => console.warn(`[excelService] VALIDATION: ${w}`));
+    const batch = createBatch(row);
     if (batch.batchName) batches.push(batch);
   }
 

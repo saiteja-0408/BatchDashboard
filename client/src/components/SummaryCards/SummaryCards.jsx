@@ -84,21 +84,14 @@ export function SummaryCards() {
      * spacing increases on lg+ so cards breathe on large screens.
      */
     <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
-      <Grid item xs={6} sm={3}>
+      <Grid item xs={12} sm={4}>
         <StatCard label="Total Batches"    value={summary.total} />
       </Grid>
-      <Grid item xs={6} sm={3}>
+      <Grid item xs={6} sm={4}>
         <StatCard label="Benefits"         value={summary.benefits} color="primary.main" />
       </Grid>
-      <Grid item xs={6} sm={3}>
+      <Grid item xs={6} sm={4}>
         <StatCard label="Tax"              value={summary.tax}      color="secondary.main" />
-      </Grid>
-      <Grid item xs={6} sm={3}>
-        <StatCard
-          label="Unknown Schedules"
-          value={summary.invalid}
-          color={summary.invalid > 0 ? 'warning.main' : 'text.secondary'}
-        />
       </Grid>
     </Grid>
   );

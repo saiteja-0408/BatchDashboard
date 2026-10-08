@@ -207,7 +207,7 @@ const BatchRow = React.memo(function BatchRow({ batch, currentTask, ctLoading, o
             <span>{batch.scheduleName}</span>
           </Tooltip>
         ) : (
-          <Typography variant="caption" color="error">missing</Typography>
+          <Typography component="span" variant="caption" color="text.secondary">—</Typography>
         )}
       </TableCell>
       <TableCell sx={CELL_ARGS_SX}>
