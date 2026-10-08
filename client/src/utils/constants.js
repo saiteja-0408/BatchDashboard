@@ -156,8 +156,30 @@ export function buildQclientLine(batch, action) {
 }
 
 /**
+ * Extracts the value of ACTUAL_BATCH_NAME from a batch arguments string.
+ *
+ * Scans each space-separated token for the pattern ACTUAL_BATCH_NAME=<value>.
+ * Returns the extracted value, or null if the argument is absent.
+ *
+ * @param {string} args  - The batch arguments string
+ * @returns {string|null}
+ */
+export function extractActualBatchName(args) {
+  if (!args) return null;
+  const tokens = args.split(/\s+/);
+  for (const token of tokens) {
+    const match = token.match(/^ACTUAL_BATCH_NAME=(.+)$/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/**
  * Log path definitions per domain.
- * <batchName> is substituted at render time.
+ * Each path function accepts (batchName, args) at render time.
+ * When args contains ACTUAL_BATCH_NAME=<value>, that value is used as the
+ * subdirectory, matching the folder structure created on the server.
+ * Falls back to batchName when the argument is absent.
  *
  * Structure: { benefits: [{ label, path }], tax: [{ label, path }] }
  */
@@ -165,21 +187,33 @@ export const LOG_PATH_DEFS = {
   benefits: [
     {
       label: 'Benefits logs',
-      path:  (batchName) => `/opt/app/accessms/bin/benefits/batch/logs/${batchName}`,
+      path:  (batchName, args) => {
+        const sub = extractActualBatchName(args) || batchName;
+        return `/opt/app/accessms/bin/benefits/batch/logs/${sub}`;
+      },
     },
     {
       label: 'Benefits logs archive',
-      path:  (batchName) => `/opt/logs/Batch/archive/benefits/logs/${batchName}`,
+      path:  (batchName, args) => {
+        const sub = extractActualBatchName(args) || batchName;
+        return `/opt/logs/Batch/archive/benefits/logs/${sub}`;
+      },
     },
   ],
   tax: [
     {
       label: 'Tax logs',
-      path:  (batchName) => `/opt/app/accessms/bin/tax/batch/logs/${batchName}`,
+      path:  (batchName, args) => {
+        const sub = extractActualBatchName(args) || batchName;
+        return `/opt/app/accessms/bin/tax/batch/logs/${sub}`;
+      },
     },
     {
       label: 'Tax logs archive',
-      path:  (batchName) => `/opt/logs/Batch/archive/tax/logs/${batchName}`,
+      path:  (batchName, args) => {
+        const sub = extractActualBatchName(args) || batchName;
+        return `/opt/logs/Batch/archive/tax/logs/${sub}`;
+      },
     },
   ],
 };

@@ -79,6 +79,25 @@ async function getBatchByName(req, res) {
 // ── SSH log helpers ───────────────────────────────────────────────────────────
 
 /**
+ * Extracts the value of ACTUAL_BATCH_NAME from a batch arguments string.
+ *
+ * Scans each space-separated token for the pattern ACTUAL_BATCH_NAME=<value>.
+ * Returns the extracted value, or null if the argument is absent.
+ *
+ * @param {string} args  - The batch arguments string (e.g. "ACTUAL_BATCH_NAME=January2024 foo=bar")
+ * @returns {string|null}
+ */
+function extractActualBatchName(args) {
+  if (!args) return null;
+  const tokens = args.split(/\s+/);
+  for (const token of tokens) {
+    const match = token.match(/^ACTUAL_BATCH_NAME=(.+)$/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/**
  * Resolves the full remote log directory for a batch.
  *
  * batch.logDir is stored as a shell "cd" command string from SHEET_LOG_PATHS:
@@ -88,13 +107,20 @@ async function getBatchByName(req, res) {
  *   <base>/logs/<batchName>
  *   e.g. /opt/app/accessms/bin/benefits/batch/logs/BatchGetDd214Response
  *
+ * When the batch arguments contain ACTUAL_BATCH_NAME=<value>, that value is
+ * used as the log subdirectory instead of batchName, reflecting the folder
+ * structure that was already created on the server under that name:
+ *   <base>/logs/<actualBatchName>
+ *
  * @param {Object} batch
  * @returns {string}  Absolute path to the batch's log directory
  */
 function resolveBatchLogDir(batch) {
   // Strip the leading "cd " if present, then trim slashes
   const base = batch.logDir.replace(/^cd\s+/i, '').trim().replace(/\/+$/, '');
-  return `${base}/logs/${batch.batchName}`;
+  const actualBatchName = extractActualBatchName(batch.arguments);
+  const subDir = actualBatchName || batch.batchName;
+  return `${base}/logs/${subDir}`;
 }
 
 /**

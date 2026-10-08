@@ -142,7 +142,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
         {logDefs.map(({ label, path }) => (
           <CommandBlock
             key={label}
-            value={path(batch.batchName)}
+            value={path(batch.batchName, batch.arguments)}
           />
         ))}
         {logDefs.length === 0 && (
