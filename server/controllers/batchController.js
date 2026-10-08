@@ -81,15 +81,20 @@ async function getBatchByName(req, res) {
 /**
  * Extracts the value of ACTUAL_BATCH_NAME from a batch arguments string.
  *
- * Scans each space-separated token for the pattern ACTUAL_BATCH_NAME=<value>.
+ * Arguments may be separated by whitespace or by "###" (the delimiter used
+ * in the batch arguments field, e.g.
+ *   "ACTUAL_BATCH_NAME=BatchOIGFetchTaxReportData###DaccessBatch.runMode=M").
+ * Splits on any combination of whitespace and "#" characters before scanning
+ * tokens, so the extracted value contains only the batch name itself.
+ *
  * Returns the extracted value, or null if the argument is absent.
  *
- * @param {string} args  - The batch arguments string (e.g. "ACTUAL_BATCH_NAME=January2024 foo=bar")
+ * @param {string} args  - The batch arguments string
  * @returns {string|null}
  */
 function extractActualBatchName(args) {
   if (!args) return null;
-  const tokens = args.split(/\s+/);
+  const tokens = args.split(/[\s#]+/);
   for (const token of tokens) {
     const match = token.match(/^ACTUAL_BATCH_NAME=(.+)$/);
     if (match) return match[1];
