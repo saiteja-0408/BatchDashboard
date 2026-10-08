@@ -18,6 +18,14 @@ export const API_PATHS = {
   // batchName must be URL-encoded by the caller
   batchByName: (name, sheet) =>
     `${API_BASE}/batches/${encodeURIComponent(name)}${sheet ? `?sheet=${sheet}` : ''}`,
+  // Log fetch endpoint — SSHs into remote server and returns log tail as plain text
+  batchLogs: (name, sheet, lines) => {
+    const params = new URLSearchParams();
+    if (sheet) params.set('sheet', sheet);
+    if (lines) params.set('lines', String(lines));
+    const qs = params.toString();
+    return `${API_BASE}/batches/${encodeURIComponent(name)}/logs${qs ? `?${qs}` : ''}`;
+  },
   // Upload endpoint — sheet must be 'benefits' or 'tax'
   uploadSheet: (sheet) => `${API_BASE}/batches/upload/${sheet}`,
   // Current-tasks endpoint — polled every 60s from the BatchTable

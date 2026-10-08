@@ -21,9 +21,10 @@ import {
   IconButton,
 } from '@mui/material';
 import CloseIcon        from '@mui/icons-material/Close';
-import { CommandViewer } from '../CommandViewer/CommandViewer';
-import { SHEET_LABELS }  from '../../utils/constants';
-import { useBatchModal } from '../../context/BatchContext';
+import { CommandViewer }   from '../CommandViewer/CommandViewer';
+import { BatchLogViewer }  from '../BatchLogViewer/BatchLogViewer';
+import { SHEET_LABELS }    from '../../utils/constants';
+import { useBatchModal }   from '../../context/BatchContext';
 
 export const BatchDetailModal = React.memo(function BatchDetailModal() {
   const { selectedBatch: batch, isModalOpen, closeBatchModal } = useBatchModal();
@@ -81,7 +82,10 @@ export const BatchDetailModal = React.memo(function BatchDetailModal() {
 
       <DialogContent>
         {batch && (
-          <CommandViewer batch={batch} />
+          <>
+            <CommandViewer batch={batch} />
+            <BatchLogViewer batch={batch} />
+          </>
         )}
       </DialogContent>
 

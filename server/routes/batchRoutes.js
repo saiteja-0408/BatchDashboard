@@ -36,6 +36,7 @@ router.get('/batches/search',          asyncWrapper(controller.searchBatches));
 router.get('/batches/filter',          asyncWrapper(controller.filterBatches));
 // Upload must be before /:name to avoid ambiguous route matching
 router.post('/batches/upload/:sheet',  upload.single('file'), asyncWrapper(uploadController.uploadSheet));
+router.get('/batches/:name/logs',      asyncWrapper(controller.getBatchLogs));
 router.get('/batches/:name',           asyncWrapper(controller.getBatchByName));
 
 // ── Current-tasks route ───────────────────────────────────────────────────────

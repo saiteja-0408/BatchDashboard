@@ -7,6 +7,7 @@
  */
 
 const excelService = require('../services/excelService');
+const sshService   = require('../services/sshService');
 
 /**
  * GET /api/batches?sheet=benefits|tax
@@ -75,4 +76,39 @@ async function getBatchByName(req, res) {
   res.json({ success: true, data: batch });
 }
 
-module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName };
+/**
+ * GET /api/batches/:name/logs?sheet=benefits|tax&lines=500
+ * SSHs into the configured remote server and returns the tail of the
+ * batch's log file as plain text.
+ *
+ * The log path is derived from batch.logDir (the server's log directory
+ * already contains the batch name).  An optional `lines` query param
+ * overrides the default tail depth (LOG_FETCH_LINES env or 500).
+ */
+async function getBatchLogs(req, res) {
+  const name  = decodeURIComponent(req.params.name);
+  const sheet = req.query.sheet || undefined;
+  const lines = req.query.lines ? Number(req.query.lines) : undefined;
+
+  await excelService.syncFromDisk(sheet);
+  const batch = excelService.getByName(name, sheet);
+  if (!batch) {
+    const err = new Error(`Batch "${name}" not found.`);
+    err.status = 404;
+    throw err;
+  }
+
+  if (!batch.logDir) {
+    const err = new Error(`Batch "${name}" has no log directory configured.`);
+    err.status = 422;
+    throw err;
+  }
+
+  // logDir already contains the full remote path (e.g. /opt/app/accessms/bin/benefits/batch/logs/BATCHNAME)
+  const logContent = await sshService.fetchRemoteLog(batch.logDir, lines);
+
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  res.send(logContent);
+}
+
+module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, getBatchLogs };

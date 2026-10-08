@@ -120,6 +120,25 @@ export async function fetchStatusReportFresh() {
 }
 
 /**
+ * Fetches the log file tail for a batch via SSH on the backend.
+ * The server SSHs into the remote batch server using credentials in .env
+ * and returns the log content as plain text.
+ *
+ * @param {string} name           - batchName
+ * @param {string|undefined} sheet - 'benefits' | 'tax' | undefined
+ * @param {number} [lines]        - Override tail depth (default: server-configured 500)
+ * @returns {Promise<string>}     - Raw log text
+ */
+export async function fetchBatchLogs(name, sheet, lines) {
+  const res = await client.get(API_PATHS.batchLogs(name, sheet, lines), {
+    timeout: 30_000,            // SSH can be slower than in-memory calls
+    responseType: 'text',
+    transformResponse: [(data) => data],  // prevent axios from JSON-parsing plain text
+  });
+  return res.data;
+}
+
+/**
  * Uploads a new .xlsx/.xls file for the given sheet and hot-reloads the
  * in-memory batch store on the server.
  *
