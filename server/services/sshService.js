@@ -233,7 +233,7 @@ function fetchErrorLog(logDir, batchName, lines) {
 
   // Three-branch shell command (always exits 0 — result comes back as stdout):
   //   1. Directory missing      → echo the "no folder" message
-  //   2. No matching error file → echo the "no biz error log" message
+  //   2. No matching error file → echo the "no logs today" message
   //   3. File found             → tail the most recently modified match
   const command =
     `if [ ! -d '${safeDir}' ]; then` +
@@ -241,7 +241,7 @@ function fetchErrorLog(logDir, batchName, lines) {
     ` else` +
     ` match=$(ls -t '${safeDir}' | grep -E '${batchName}_Bus_Error\\.log$' | grep -v '_Internal' | head -1);` +
     ` if [ -z "$match" ]; then` +
-    ` echo 'No Biz Error log found for this batch.';` +
+    ` echo 'No logs found for today.';` +
     ` else tail -n ${tailLines} '${safeDir}/'"$match"'; fi; fi`;
 
   return runSshCommand(command, `Biz Error log not found for ${batchName} in ${dir}`);
