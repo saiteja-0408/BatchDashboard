@@ -21,14 +21,25 @@
  *   - SSH credentials come exclusively from environment variables (no hardcoding).
  *   - The SSH connection is always closed after execution (success or failure).
  *   - A 60-second execution timeout prevents hung sessions.
+ *
+ * sudo password handling:
+ *   ssh2 exec sessions have no TTY, so sudo cannot prompt interactively.
+ *   We use `sudo -S -p 'SUDO_ASK:'` which makes sudo write a known sentinel
+ *   to stderr when it needs a password, then we write the password to stdin
+ *   only when that sentinel is detected.  If the remote user has NOPASSWD in
+ *   sudoers the sentinel never appears and stdin is never written — the
+ *   password is not sent at all.
  */
 
 'use strict';
 
 const { Client } = require('ssh2');
 
-const SSH_TIMEOUT_MS = 10_000;   // connection ready timeout
-const EXEC_TIMEOUT_MS = 60_000;  // maximum command execution time
+const SSH_TIMEOUT_MS  = 10_000;   // connection ready timeout
+const EXEC_TIMEOUT_MS = 60_000;   // maximum command execution time
+
+/** Sentinel string sudo is told to emit when it needs a password (-p flag). */
+const SUDO_PROMPT = 'SUDO_ASK:';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,15 +82,11 @@ function getSshConfig() {
  * @param {string} command
  */
 function validateCommand(command) {
-  // Must start with the expected prefix
   if (!command.startsWith('sudo ./qclient.sh ')) {
     const err = new Error('Command must start with "sudo ./qclient.sh".');
     err.status = 400;
     throw err;
   }
-  // Only safe characters allowed in the full command string:
-  // word chars, hyphens, dots, forward slashes, equals, hashes, spaces,
-  // double quotes (for quoted argument block), and at-sign.
   if (!/^[\w\s./\-=\#"@]+$/.test(command)) {
     const err = new Error(
       'Command contains unsafe characters. Only alphanumeric characters, ' +
@@ -88,7 +95,6 @@ function validateCommand(command) {
     err.status = 400;
     throw err;
   }
-  // The action token must be one of the two known values
   const actionMatch = command.match(/^sudo \.\/qclient\.sh (\S+)/);
   if (!actionMatch || !['runJobOnly', 'resumeJob'].includes(actionMatch[1])) {
     const err = new Error('Command action must be "runJobOnly" or "resumeJob".');
@@ -98,56 +104,53 @@ function validateCommand(command) {
 }
 
 /**
- * Wraps `command` so sudo can read its password from stdin rather than
- * requiring a TTY (which ssh2 exec sessions never have).
+ * Opens a single-use SSH connection and executes `sudoCommand` via sudo.
  *
- * Technique: `echo '<password>' | sudo -S -p '' <rest-of-command>`
- *   -S  — read password from stdin
- *   -p ''  — suppress the "password:" prompt so it doesn't leak into stdout
+ * Password-supply strategy — only send when actually needed:
+ *   1. The command is run as:
+ *        sudo -S -p 'SUDO_ASK:' ./qclient.sh …
+ *      -S  tells sudo to read its password from stdin (no TTY needed).
+ *      -p  sets a custom prompt string we can detect on stderr.
+ *   2. We watch stderr for the SUDO_ASK: sentinel.
+ *      - Seen  → sudo needs a password; write "<password>\n" to stdin once,
+ *                then close stdin so the command continues.
+ *      - Never seen → user has NOPASSWD in sudoers; stdin is never written
+ *                     and the password from .env is never transmitted.
  *
- * The password is taken from LOG_SSH_PASSWORD (already validated present
- * by getSshConfig).  Single-quotes inside the password are escaped with
- * the standard shell '\'' sequence so the echo literal is always safe.
+ * This means the password travels over the SSH-encrypted channel only when
+ * the remote server actually demands it, and it never appears in the shell
+ * command string (no process-list exposure).
  *
- * @param {string} sudoCommand  — the validated "sudo ./qclient.sh …" string
+ * @param {string} sudoCommand  — validated "sudo ./qclient.sh …" string
  * @param {string} password     — LOG_SSH_PASSWORD value
- * @returns {string}            — shell command ready to send over ssh2 exec
- */
-function wrapWithSudoPassword(sudoCommand, password) {
-  // Escape any single-quotes in the password for the surrounding echo '…'
-  const escaped = password.replace(/'/g, "'\\''");
-  // Strip the leading "sudo " — we re-add it with the -S flag
-  const withoutSudo = sudoCommand.replace(/^sudo\s+/, '');
-  return `echo '${escaped}' | sudo -S -p '' ${withoutSudo}`;
-}
-
-/**
- * Opens a single-use SSH connection, runs `command`, and resolves with
- * { output, exitCode }.  The connection is always closed on completion.
- *
- * @param {string} command
  * @returns {Promise<{ output: string, exitCode: number }>}
  */
-function runSshCommand(command) {
-  const config  = getSshConfig();
-  // Wrap the sudo command so it reads its password from stdin (no TTY needed)
-  const wrapped = wrapWithSudoPassword(command, config.password);
+function runSshCommand(sudoCommand, password) {
+  const config = getSshConfig();
+
+  // Replace the leading "sudo" with "sudo -S -p '<sentinel>'" so sudo
+  // writes a detectable prompt to stderr when it needs a password.
+  const execCmd = sudoCommand.replace(
+    /^sudo\s+/,
+    `sudo -S -p '${SUDO_PROMPT}' `
+  );
 
   return new Promise((resolve, reject) => {
     const conn = new Client();
-    let stdout = '';
-    let stderr = '';
+    let stdout        = '';
+    let stderr        = '';
+    let passwordSent  = false;
     let execTimer;
 
     conn
       .on('ready', () => {
-        conn.exec(wrapped, (err, stream) => {
+        conn.exec(execCmd, (err, stream) => {
           if (err) {
             conn.end();
             return reject(err);
           }
 
-          // Hard timeout — kill the stream if the command hangs
+          // Hard timeout — destroy stream if the command hangs
           execTimer = setTimeout(() => {
             stream.destroy();
             conn.end();
@@ -162,10 +165,23 @@ function runSshCommand(command) {
             .on('close', (code) => {
               clearTimeout(execTimer);
               conn.end();
-              resolve({ output: (stdout + (stderr ? `\nSTDERR:\n${stderr}` : '')).trim(), exitCode: code ?? 0 });
+              // Strip the sudo prompt sentinel from stderr before returning
+              const cleanStderr = stderr.replace(SUDO_PROMPT, '').trim();
+              const combined = (
+                stdout + (cleanStderr ? `\nSTDERR:\n${cleanStderr}` : '')
+              ).trim();
+              resolve({ output: combined, exitCode: code ?? 0 });
             })
-            .on('data',  (chunk) => { stdout += chunk; })
-            .stderr.on('data', (chunk) => { stderr += chunk; });
+            .on('data', (chunk) => { stdout += chunk; })
+            .stderr.on('data', (chunk) => {
+              stderr += chunk;
+              // Only write the password once, and only when sudo asks for it
+              if (!passwordSent && stderr.includes(SUDO_PROMPT)) {
+                passwordSent = true;
+                stream.stdin.write(`${password}\n`);
+                // Do NOT close stdin here — the command is still running
+              }
+            });
         });
       })
       .on('error', (err) => {
@@ -216,7 +232,8 @@ async function runCommand(req, res) {
   validateCommand(command.trim());
 
   try {
-    const { output, exitCode } = await runSshCommand(command.trim());
+    const config = getSshConfig();
+    const { output, exitCode } = await runSshCommand(command.trim(), config.password);
 
     if (exitCode !== 0) {
       return res.status(200).json({
