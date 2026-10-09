@@ -167,6 +167,10 @@ function runSshCommand(command, notFoundMsg) {
  *   <logDir>/<BatchName><MM-DD-YYYY>.log
  *   e.g. /opt/app/accessms/bin/benefits/batch/logs/BatchGetDd214Response/BatchGetDd214Response10-06-2026.log
  *
+ * Response messages (returned as plain text, never thrown):
+ *   "No log folder found for this batch." — directory does not exist on the server
+ *   "No logs found for today."            — directory exists but no file for today's date
+ *
  * @param {string} logDir    — Full path to the batch log directory on the remote server
  * @param {string} batchName — Batch name (used to construct the filename)
  * @param {number} [lines]   — Tail depth (default: LOG_FETCH_LINES env or 500)
@@ -182,13 +186,21 @@ function fetchTodayLog(logDir, batchName, lines) {
   const dir       = logDir.replace(/\/+$/, '');
   const filePath  = `${dir}/${fileName}`;
 
-  const safeFile  = filePath.replace(/'/g, "'\\''");
-  const command   = `tail -n ${tailLines} '${safeFile}'`;
+  const safeDir  = dir.replace(/'/g, "'\\''");
+  const safeFile = filePath.replace(/'/g, "'\\''");
 
-  return runSshCommand(
-    command,
-    `Today's log file not found: ${fileName} — the batch may not have run today.`
-  );
+  // Three-branch shell command (always exits 0 — result comes back as stdout):
+  //   1. Directory missing  → echo the "no folder" message
+  //   2. File missing       → echo the "no logs today" message
+  //   3. File present       → tail it
+  const command =
+    `if [ ! -d '${safeDir}' ]; then` +
+    ` echo 'No log folder found for this batch.';` +
+    ` elif [ ! -f '${safeFile}' ]; then` +
+    ` echo 'No logs found for today.';` +
+    ` else tail -n ${tailLines} '${safeFile}'; fi`;
+
+  return runSshCommand(command, `Today's log file not found: ${fileName}`);
 }
 
 /**
@@ -199,6 +211,10 @@ function fetchTodayLog(logDir, batchName, lines) {
  * Uses `ls -t` to find the matching file, then tails it.
  * If multiple files match (unlikely but possible), the most recently
  * modified one is used.
+ *
+ * Response messages (returned as plain text, never thrown):
+ *   "No log folder found for this batch."   — directory does not exist on the server
+ *   "No Biz Error log found for this batch." — directory exists but no matching file
  *
  * @param {string} logDir    — Full path to the batch log directory on the remote server
  * @param {string} batchName — Batch name
@@ -212,20 +228,23 @@ function fetchErrorLog(logDir, batchName, lines) {
   const tailLines = lines ?? (Number(process.env.LOG_FETCH_LINES) || DEFAULT_LINES);
   const dir       = logDir.replace(/\/+$/, '');
 
-  // Shell one-liner:
-  //   1. ls -t  — list files newest-first
-  //   2. grep   — keep only *BatchName*_Bus_Error.log, exclude _Internal
-  //   3. head -1 — take the newest match
-  //   4. xargs tail -n N — tail it
   // Single-quote batchName is already validated to be word/hyphen/dot only.
   const safeDir  = dir.replace(/'/g, "'\\''");
-  const command  =
-    `ls -t '${safeDir}' | grep -E '${batchName}_Bus_Error\\.log$' | grep -v '_Internal' | head -1 | xargs -I{} tail -n ${tailLines} '${safeDir}/{}'`;
 
-  return runSshCommand(
-    command,
-    `Error log not found: no file matching *${batchName}*_Bus_Error.log in ${dir}`
-  );
+  // Three-branch shell command (always exits 0 — result comes back as stdout):
+  //   1. Directory missing      → echo the "no folder" message
+  //   2. No matching error file → echo the "no biz error log" message
+  //   3. File found             → tail the most recently modified match
+  const command =
+    `if [ ! -d '${safeDir}' ]; then` +
+    ` echo 'No log folder found for this batch.';` +
+    ` else` +
+    ` match=$(ls -t '${safeDir}' | grep -E '${batchName}_Bus_Error\\.log$' | grep -v '_Internal' | head -1);` +
+    ` if [ -z "$match" ]; then` +
+    ` echo 'No Biz Error log found for this batch.';` +
+    ` else tail -n ${tailLines} '${safeDir}/'"$match"'; fi; fi`;
+
+  return runSshCommand(command, `Biz Error log not found for ${batchName} in ${dir}`);
 }
 
 module.exports = { fetchTodayLog, fetchErrorLog };

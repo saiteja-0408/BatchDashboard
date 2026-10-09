@@ -197,7 +197,7 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
           disabled={isLoading}
           sx={{ minWidth: 140 }}
         >
-          {isLoadingError ? 'Fetching…' : 'Get Error Logs'}
+          {isLoadingError ? 'Fetching…' : 'Get Biz Error Logs'}
         </Button>
 
       </Box>
@@ -221,7 +221,7 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
       {/* Idle hint */}
       {status === 'idle' && (
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-          "Get Logs" fetches today's log · "Get Error Logs" fetches the Bus Error log.
+          "Get Logs" fetches today's log · "Get Biz Error Logs" fetches the Bus Error log.
         </Typography>
       )}
     </Box>
