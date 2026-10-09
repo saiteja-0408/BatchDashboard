@@ -36,6 +36,8 @@ export const API_PATHS = {
   },
   // Upload endpoint — sheet must be 'benefits' or 'tax'
   uploadSheet: (sheet) => `${API_BASE}/batches/upload/${sheet}`,
+  // Run Command — SSH execution of a qclient.sh command on the batch server
+  runCommand: `${API_BASE}/batch/run-command`,
   // Current-tasks endpoint — polled every 60s from the BatchTable
   currentTasks: (sheet) => `${API_BASE}/current-tasks${sheet ? `?sheet=${sheet}` : ''}`,
   // Status report endpoint — plain request served from server cache when warm

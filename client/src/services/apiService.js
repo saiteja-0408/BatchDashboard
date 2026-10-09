@@ -155,6 +155,20 @@ export async function fetchBatchErrorLogs(name, sheet, lines) {
 }
 
 /**
+ * Executes a batch qclient.sh command on the remote server via SSH.
+ *
+ * @param {string} command     - The full qclient.sh command string (from CommandViewer)
+ * @param {'run'|'resume'} commandType
+ * @returns {Promise<{ success: boolean, output: string, exitCode: number, error?: string }>}
+ */
+export async function runBatchCommand(command, commandType) {
+  const res = await client.post(API_PATHS.runCommand, { command, commandType }, {
+    timeout: 70_000,  // 60s exec timeout on server + buffer
+  });
+  return res.data;
+}
+
+/**
  * Uploads a new .xlsx/.xls file for the given sheet and hot-reloads the
  * in-memory batch store on the server.
  *

@@ -16,6 +16,7 @@ const controller             = require('../controllers/batchController');
 const uploadController       = require('../controllers/uploadController');
 const currentTasksController = require('../controllers/currentTasksController');
 const statusReportController = require('../controllers/statusReportController');
+const runCommandController   = require('../controllers/runCommandController');
 const { asyncWrapper }       = require('../middlewares/errorHandler');
 
 const os = require('os');
@@ -39,6 +40,9 @@ router.post('/batches/upload/:sheet',  upload.single('file'), asyncWrapper(uploa
 router.get('/batches/:name/logs',       asyncWrapper(controller.getBatchLogs));
 router.get('/batches/:name/error-logs', asyncWrapper(controller.getBatchErrorLogs));
 router.get('/batches/:name',            asyncWrapper(controller.getBatchByName));
+
+// ── Run Command route (SSH execution — feature-gated via ENABLE_SSH_RUN_COMMAND) ──
+router.post('/batch/run-command', asyncWrapper(runCommandController.runCommand));
 
 // ── Current-tasks route ───────────────────────────────────────────────────────
 router.get('/current-tasks',   asyncWrapper(currentTasksController.getCurrentTasks));
