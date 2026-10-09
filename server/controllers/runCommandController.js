@@ -98,6 +98,30 @@ function validateCommand(command) {
 }
 
 /**
+ * Wraps `command` so sudo can read its password from stdin rather than
+ * requiring a TTY (which ssh2 exec sessions never have).
+ *
+ * Technique: `echo '<password>' | sudo -S -p '' <rest-of-command>`
+ *   -S  — read password from stdin
+ *   -p ''  — suppress the "password:" prompt so it doesn't leak into stdout
+ *
+ * The password is taken from LOG_SSH_PASSWORD (already validated present
+ * by getSshConfig).  Single-quotes inside the password are escaped with
+ * the standard shell '\'' sequence so the echo literal is always safe.
+ *
+ * @param {string} sudoCommand  — the validated "sudo ./qclient.sh …" string
+ * @param {string} password     — LOG_SSH_PASSWORD value
+ * @returns {string}            — shell command ready to send over ssh2 exec
+ */
+function wrapWithSudoPassword(sudoCommand, password) {
+  // Escape any single-quotes in the password for the surrounding echo '…'
+  const escaped = password.replace(/'/g, "'\\''");
+  // Strip the leading "sudo " — we re-add it with the -S flag
+  const withoutSudo = sudoCommand.replace(/^sudo\s+/, '');
+  return `echo '${escaped}' | sudo -S -p '' ${withoutSudo}`;
+}
+
+/**
  * Opens a single-use SSH connection, runs `command`, and resolves with
  * { output, exitCode }.  The connection is always closed on completion.
  *
@@ -105,7 +129,9 @@ function validateCommand(command) {
  * @returns {Promise<{ output: string, exitCode: number }>}
  */
 function runSshCommand(command) {
-  const config = getSshConfig();
+  const config  = getSshConfig();
+  // Wrap the sudo command so it reads its password from stdin (no TTY needed)
+  const wrapped = wrapWithSudoPassword(command, config.password);
 
   return new Promise((resolve, reject) => {
     const conn = new Client();
@@ -115,7 +141,7 @@ function runSshCommand(command) {
 
     conn
       .on('ready', () => {
-        conn.exec(command, (err, stream) => {
+        conn.exec(wrapped, (err, stream) => {
           if (err) {
             conn.end();
             return reject(err);
