@@ -16,7 +16,7 @@
  * No static placeholder text — batch name is always substituted at render time.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
@@ -271,6 +271,15 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   // Independent run-command state for Run Command and Resume Command sections
   const runCmd    = useRunCommand();
   const resumeCmd = useRunCommand();
+
+  // Reset both output panels whenever a different batch is selected or when
+  // the modal closes (batch becomes null ~300ms after close).
+  // This prevents stale output from a previous row appearing in the next open.
+  useEffect(() => {
+    runCmd.reset();
+    resumeCmd.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batch?.batchName]);
 
   const handleRun    = useCallback(() => {
     runCmd.reset();
