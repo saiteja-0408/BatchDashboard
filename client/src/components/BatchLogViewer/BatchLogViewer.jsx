@@ -27,17 +27,76 @@ import ArticleIcon        from '@mui/icons-material/Assessment';
 import ErrorOutlineIcon   from '@mui/icons-material/RemoveCircleOutline';
 import ContentCopyIcon    from '@mui/icons-material/ContentCopy';
 import CheckIcon          from '@mui/icons-material/Check';
+import DownloadIcon       from '@mui/icons-material/GetApp';
 import { fetchBatchLogs, fetchBatchErrorLogs } from '../../services/apiService';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Builds today's date string in MM-DD-YYYY format — mirrors todayMMDDYYYY()
+ * in server/services/sshService.js so the downloaded filename matches the
+ * actual file name on the remote server exactly.
+ * @returns {string}  e.g. "10-09-2026"
+ */
+function todayMMDDYYYY() {
+  const d  = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${mm}-${dd}-${d.getFullYear()}`;
+}
+
+/**
+ * Returns the filename the log would have on the remote server.
+ *
+ * Today's log  →  <batchName><MM-DD-YYYY>.log
+ *   e.g. BatchGetDd214Response10-09-2026.log
+ *
+ * Bus Error log →  <scheduleName>_<batchName>_Bus_Error.log
+ *                  (or <batchName>_Bus_Error.log when scheduleName is absent)
+ *   e.g. benefits_icon_import_12pm_BatchGetDd214Response_Bus_Error.log
+ *
+ * @param {'today'|'error'} logType
+ * @param {string} batchName
+ * @param {string} [scheduleName]
+ * @returns {string}
+ */
+function buildLogFileName(logType, batchName, scheduleName) {
+  if (logType === 'error') {
+    return scheduleName
+      ? `${scheduleName}_${batchName}_Bus_Error.log`
+      : `${batchName}_Bus_Error.log`;
+  }
+  return `${batchName}${todayMMDDYYYY()}.log`;
+}
+
+/**
+ * Triggers a browser file download of `text` with the given `filename`.
+ * Uses a temporary anchor element — no server round-trip needed.
+ * @param {string} text
+ * @param {string} filename
+ */
+function downloadTextFile(text, filename) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── Log output panel ──────────────────────────────────────────────────────────
 
-const LogPanel = React.memo(function LogPanel({ content, logTypeLabel }) {
+const LogPanel = React.memo(function LogPanel({ content, logTypeLabel, fileName }) {
   const { copy, copied } = useCopyToClipboard();
 
   return (
     <Box sx={{ mt: 1 }}>
-      {/* Header row: which log is showing + copy button */}
+      {/* Header row: which log is showing + action buttons */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
         <Chip
           label={logTypeLabel}
@@ -46,17 +105,34 @@ const LogPanel = React.memo(function LogPanel({ content, logTypeLabel }) {
           color="default"
           sx={{ fontSize: '0.72rem' }}
         />
-        <Tooltip title={copied ? 'Copied!' : 'Copy all'}>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={copied ? <CheckIcon /> : <ContentCopyIcon />}
-            onClick={() => copy(content)}
-            sx={{ minWidth: 100 }}
-          >
-            {copied ? 'Copied' : 'Copy All'}
-          </Button>
-        </Tooltip>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {/* Download button */}
+          <Tooltip title={`Download as ${fileName}`}>
+            <Button
+              size="small"
+              variant="outlined"
+              color="primary"
+              startIcon={<DownloadIcon />}
+              onClick={() => downloadTextFile(content, fileName)}
+              sx={{ minWidth: 110 }}
+            >
+              Download
+            </Button>
+          </Tooltip>
+
+          {/* Copy All button */}
+          <Tooltip title={copied ? 'Copied!' : 'Copy all'}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={copied ? <CheckIcon /> : <ContentCopyIcon />}
+              onClick={() => copy(content)}
+              sx={{ minWidth: 100 }}
+            >
+              {copied ? 'Copied' : 'Copy All'}
+            </Button>
+          </Tooltip>
+        </Box>
       </Box>
 
       {/* Scrollable log body */}
@@ -88,6 +164,7 @@ const LogPanel = React.memo(function LogPanel({ content, logTypeLabel }) {
 LogPanel.propTypes = {
   content:      PropTypes.string.isRequired,
   logTypeLabel: PropTypes.string.isRequired,
+  fileName:     PropTypes.string.isRequired,
 };
 
 // ── BatchLogViewer ────────────────────────────────────────────────────────────
@@ -154,6 +231,9 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
   const logTypeLabel = activeLogType === 'error'
     ? 'Bus Error Log'
     : "Today's Log";
+
+  // Filename mirrors the actual file on the remote server (see sshService.js)
+  const logFileName = buildLogFileName(activeLogType, batch.batchName, batch.scheduleName);
 
   return (
     <Box>
@@ -230,7 +310,7 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
 
       {/* Log output */}
       <Collapse in={hasResult && !isInfoMessage}>
-        <LogPanel content={logText} logTypeLabel={logTypeLabel} />
+        <LogPanel content={logText} logTypeLabel={logTypeLabel} fileName={logFileName} />
       </Collapse>
 
       {/* Idle hint */}
