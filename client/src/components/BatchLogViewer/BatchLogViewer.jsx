@@ -146,6 +146,11 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
   const hasResult      = status === 'success';
   const hasError       = status === 'error';
 
+  const isInfoMessage = activeLogType === 'error' && (
+    logText === 'No business error files avaialble for today' ||
+    logText === 'No Business Error Logs found for today'
+  );
+
   const logTypeLabel = activeLogType === 'error'
     ? 'Bus Error Log'
     : "Today's Log";
@@ -213,8 +218,18 @@ export const BatchLogViewer = React.memo(function BatchLogViewer({ batch }) {
         </Alert>
       </Collapse>
 
+      {/* Info message alert (styled as neutral info instead of code block or error) */}
+      <Collapse in={hasResult && isInfoMessage}>
+        <Alert
+          severity="info"
+          sx={{ mt: 1.5 }}
+        >
+          {logText}
+        </Alert>
+      </Collapse>
+
       {/* Log output */}
-      <Collapse in={hasResult}>
+      <Collapse in={hasResult && !isInfoMessage}>
         <LogPanel content={logText} logTypeLabel={logTypeLabel} />
       </Collapse>
 

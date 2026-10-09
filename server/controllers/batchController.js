@@ -162,7 +162,7 @@ async function _serveBatchLog(req, res, logType) {
   const logBatchName    = actualBatchName || batch.batchName;
 
   const logContent = logType === 'error'
-    ? await sshService.fetchErrorLog(logDir, logBatchName, lines)
+    ? await sshService.fetchErrorLog(logDir, logBatchName, batch.scheduleName, lines)
     : await sshService.fetchTodayLog(logDir, logBatchName, lines);
 
   res.set('Content-Type', 'text/plain; charset=utf-8');

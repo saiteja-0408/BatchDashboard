@@ -115,6 +115,19 @@ function validateBatchName(batchName) {
 }
 
 /**
+ * Validates scheduleName contains only safe characters (word chars, hyphens, dots, spaces).
+ * Throws a 400-flagged Error on any other character (shell-injection and path-traversal guard).
+ * @param {string} scheduleName
+ */
+function validateScheduleName(scheduleName) {
+  if (!/^[\w.\-\s]+$/.test(scheduleName)) {
+    const err = new Error(`Invalid schedule name "${scheduleName}": contains unsafe characters.`);
+    err.status = 400;
+    throw err;
+  }
+}
+
+/**
  * Core SSH executor — opens a single-use connection, runs `command`,
  * collects stdout, resolves with the captured text.
  *
@@ -221,28 +234,55 @@ function fetchTodayLog(logDir, batchName, lines) {
  * @param {number} [lines]   — Tail depth (default: LOG_FETCH_LINES env or 500)
  * @returns {Promise<string>}
  */
-function fetchErrorLog(logDir, batchName, lines) {
+function fetchErrorLog(logDir, batchName, scheduleName, lines) {
   validateLogDir(logDir);
   validateBatchName(batchName);
+  if (scheduleName) {
+    validateScheduleName(scheduleName);
+  }
 
   const tailLines = lines ?? (Number(process.env.LOG_FETCH_LINES) || DEFAULT_LINES);
   const dir       = logDir.replace(/\/+$/, '');
 
-  // Single-quote batchName is already validated to be word/hyphen/dot only.
+  // Single-quote batchName and scheduleName are validated safe.
   const safeDir  = dir.replace(/'/g, "'\\''");
 
-  // Three-branch shell command (always exits 0 — result comes back as stdout):
-  //   1. Directory missing      → echo the "no folder" message
-  //   2. No matching error file → echo the "no logs today" message
-  //   3. File found             → tail the most recently modified match
+  let matchCommand = '';
+  if (scheduleName) {
+    const fileName = `${scheduleName}_${batchName}_Bus_Error.log`;
+    matchCommand =
+      `filePath='${safeDir}/${fileName}';` +
+      ` if [ ! -f "$filePath" ]; then` +
+      ` echo 'No business error files avaialble for today';` +
+      ` else` +
+      ` file_date=$(date -r "$filePath" +%Y-%m-%d);` +
+      ` today_date=$(date +%Y-%m-%d);` +
+      ` if [ "$file_date" != "$today_date" ]; then` +
+      ` echo 'No business error files avaialble for today';` +
+      ` elif [ -z "$(tr -d '[:space:]' < "$filePath" | head -c 1)" ]; then` +
+      ` echo 'No Business Error Logs found for today';` +
+      ` else tail -n ${tailLines} "$filePath"; fi; fi`;
+  } else {
+    matchCommand =
+      `match=$(ls -t '${safeDir}' | grep -E '_${batchName}_Bus_Error\\.log$' | grep -v '_Internal' | head -1);` +
+      ` if [ -z "$match" ]; then` +
+      ` echo 'No business error files avaialble for today';` +
+      ` else` +
+      ` filePath='${safeDir}/'"$match";` +
+      ` file_date=$(date -r "$filePath" +%Y-%m-%d);` +
+      ` today_date=$(date +%Y-%m-%d);` +
+      ` if [ "$file_date" != "$today_date" ]; then` +
+      ` echo 'No business error files avaialble for today';` +
+      ` elif [ -z "$(tr -d '[:space:]' < "$filePath" | head -c 1)" ]; then` +
+      ` echo 'No Business Error Logs found for today';` +
+      ` else tail -n ${tailLines} "$filePath"; fi; fi`;
+  }
+
   const command =
     `if [ ! -d '${safeDir}' ]; then` +
     ` echo 'No log folder found for this batch.';` +
     ` else` +
-    ` match=$(ls -t '${safeDir}' | grep -E '${batchName}_Bus_Error\\.log$' | grep -v '_Internal' | head -1);` +
-    ` if [ -z "$match" ]; then` +
-    ` echo 'No logs found for today.';` +
-    ` else tail -n ${tailLines} '${safeDir}/'"$match"'; fi; fi`;
+    ` ${matchCommand}; fi`;
 
   return runSshCommand(command, `Biz Error log not found for ${batchName} in ${dir}`);
 }
