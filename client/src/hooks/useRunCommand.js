@@ -2,7 +2,10 @@
  * useRunCommand.js — manages the async state for a single SSH run-command call.
  *
  * Returns:
- *   execute(command, commandType) — triggers the API call
+ *   execute(command, commandType, logDir) — triggers the API call
+ *     logDir: the "cd /path/to/dir" string from batch.logDir — required so
+ *             the server can cd into the correct directory before running the
+ *             command (qclient.sh is a relative path and only exists there).
  *   status   — 'idle' | 'loading' | 'success' | 'error'
  *   output   — stdout (+ stderr) returned by the server
  *   errMsg   — human-readable error description on failure
@@ -29,14 +32,14 @@ export function useRunCommand() {
     setExitCode(null);
   }, []);
 
-  const execute = useCallback(async (command, commandType) => {
+  const execute = useCallback(async (command, commandType, logDir) => {
     setStatus('loading');
     setOutput('');
     setErrMsg('');
     setExitCode(null);
 
     try {
-      const result = await runBatchCommand(command, commandType);
+      const result = await runBatchCommand(command, commandType, logDir);
 
       setOutput(result.output ?? '');
       setExitCode(result.exitCode ?? 0);

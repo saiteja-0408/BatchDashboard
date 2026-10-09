@@ -29,6 +29,12 @@
  *   only when that sentinel is detected.  If the remote user has NOPASSWD in
  *   sudoers the sentinel never appears and stdin is never written — the
  *   password is not sent at all.
+ *
+ * Working directory:
+ *   qclient.sh is a relative path — it only exists in the batch directory.
+ *   The client sends the batch's logDir field (e.g. "cd /opt/app/…/batch")
+ *   and the server prepends "cd <dir> && " to the executed command so the
+ *   shell is in the right directory before sudo ./qclient.sh runs.
  */
 
 'use strict';
@@ -40,6 +46,16 @@ const EXEC_TIMEOUT_MS = 60_000;   // maximum command execution time
 
 /** Sentinel string sudo is told to emit when it needs a password (-p flag). */
 const SUDO_PROMPT = 'SUDO_ASK:';
+
+/**
+ * Allowed directory prefixes — mirrors ALLOWED_LOG_PREFIXES in sshService.js.
+ * The logDir sent by the client must start with one of these after stripping
+ * the leading "cd " so we cannot be directed to run in an arbitrary path.
+ */
+const ALLOWED_DIR_PREFIXES = [
+  '/opt/app/accessms/bin/',
+  '/opt/logs/Batch/',
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -104,6 +120,50 @@ function validateCommand(command) {
 }
 
 /**
+ * Validates and resolves the working directory from the logDir field.
+ *
+ * logDir is stored as a "cd /path/to/dir" shell string (the value shown in the
+ * "Change Directory" section of the UI).  This function:
+ *   1. Strips the leading "cd " prefix if present.
+ *   2. Checks the result against ALLOWED_DIR_PREFIXES (path-traversal guard).
+ *   3. Returns the clean absolute path ready for "cd <dir> && <command>".
+ *
+ * Throws a 400-flagged Error on any validation failure.
+ *
+ * @param {string} logDir  — e.g. "cd /opt/app/accessms/bin/benefits/batch"
+ * @returns {string}        — e.g. "/opt/app/accessms/bin/benefits/batch"
+ */
+function resolveWorkDir(logDir) {
+  if (!logDir || typeof logDir !== 'string' || !logDir.trim()) {
+    const err = new Error('"logDir" is required to locate qclient.sh on the remote server.');
+    err.status = 400;
+    throw err;
+  }
+
+  // Strip leading "cd " (case-insensitive, optional) and surrounding whitespace
+  const dir = logDir.trim().replace(/^cd\s+/i, '').trim().replace(/\/+$/, '');
+
+  if (!dir) {
+    const err = new Error('"logDir" does not contain a valid directory path.');
+    err.status = 400;
+    throw err;
+  }
+
+  // Path-traversal guard — must be under an allowed prefix
+  const allowed = ALLOWED_DIR_PREFIXES.some((p) => dir.startsWith(p));
+  if (!allowed) {
+    const err = new Error(
+      `Working directory "${dir}" is outside the allowed paths. ` +
+      `Allowed prefixes: ${ALLOWED_DIR_PREFIXES.join(', ')}`
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  return dir;
+}
+
+/**
  * Opens a single-use SSH connection and executes `sudoCommand` via sudo.
  *
  * Password-supply strategy — only send when actually needed:
@@ -125,15 +185,18 @@ function validateCommand(command) {
  * @param {string} password     — LOG_SSH_PASSWORD value
  * @returns {Promise<{ output: string, exitCode: number }>}
  */
-function runSshCommand(sudoCommand, password) {
+function runSshCommand(sudoCommand, workDir, password) {
   const config = getSshConfig();
 
+  // Prepend "cd <workDir> && " so the shell is in the batch directory
+  // before ./qclient.sh is invoked (it is a relative path).
   // Replace the leading "sudo" with "sudo -S -p '<sentinel>'" so sudo
   // writes a detectable prompt to stderr when it needs a password.
-  const execCmd = sudoCommand.replace(
+  const sudoWithFlags = sudoCommand.replace(
     /^sudo\s+/,
     `sudo -S -p '${SUDO_PROMPT}' `
   );
+  const execCmd = `cd ${workDir} && ${sudoWithFlags}`;
 
   return new Promise((resolve, reject) => {
     const conn = new Client();
@@ -175,11 +238,24 @@ function runSshCommand(sudoCommand, password) {
             .on('data', (chunk) => { stdout += chunk; })
             .stderr.on('data', (chunk) => {
               stderr += chunk;
-              // Only write the password once, and only when sudo asks for it
-              if (!passwordSent && stderr.includes(SUDO_PROMPT)) {
-                passwordSent = true;
-                stream.stdin.write(`${password}\n`);
-                // Do NOT close stdin here — the command is still running
+              if (stderr.includes(SUDO_PROMPT)) {
+                if (!passwordSent) {
+                  // First prompt — send the password once
+                  passwordSent = true;
+                  stream.stdin.write(`${password}\n`);
+                } else {
+                  // Prompt appeared again after we already sent the password —
+                  // the password is wrong.  Destroy the stream immediately so
+                  // we don't loop, and surface a clear error.
+                  clearTimeout(execTimer);
+                  stream.destroy();
+                  conn.end();
+                  const e = new Error(
+                    'sudo: incorrect password. Check LOG_SSH_PASSWORD in .env.'
+                  );
+                  e.status = 401;
+                  reject(e);
+                }
               }
             });
         });
@@ -228,12 +304,13 @@ async function runCommand(req, res) {
     });
   }
 
-  // Sanitise / validate the command string (throws 400 on violation)
+  // Sanitise / validate the command string and working directory
   validateCommand(command.trim());
+  const workDir = resolveWorkDir(req.body.logDir);
 
   try {
     const config = getSshConfig();
-    const { output, exitCode } = await runSshCommand(command.trim(), config.password);
+    const { output, exitCode } = await runSshCommand(command.trim(), workDir, config.password);
 
     if (exitCode !== 0) {
       return res.status(200).json({

@@ -283,12 +283,12 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
 
   const handleRun    = useCallback(() => {
     runCmd.reset();
-    runCmd.execute(buildQclientLine(batch, 'runJobOnly'), 'run');
+    runCmd.execute(buildQclientLine(batch, 'runJobOnly'), 'run', batch.logDir);
   }, [batch, runCmd]);
 
   const handleResume = useCallback(() => {
     resumeCmd.reset();
-    resumeCmd.execute(buildQclientLine(batch, 'resumeJob'), 'resume');
+    resumeCmd.execute(buildQclientLine(batch, 'resumeJob'), 'resume', batch.logDir);
   }, [batch, resumeCmd]);
 
   if (!batch) return null;

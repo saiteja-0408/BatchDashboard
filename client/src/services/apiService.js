@@ -161,8 +161,8 @@ export async function fetchBatchErrorLogs(name, sheet, lines) {
  * @param {'run'|'resume'} commandType
  * @returns {Promise<{ success: boolean, output: string, exitCode: number, error?: string }>}
  */
-export async function runBatchCommand(command, commandType) {
-  const res = await client.post(API_PATHS.runCommand, { command, commandType }, {
+export async function runBatchCommand(command, commandType, logDir) {
+  const res = await client.post(API_PATHS.runCommand, { command, commandType, logDir }, {
     timeout: 70_000,  // 60s exec timeout on server + buffer
   });
   return res.data;
