@@ -155,6 +155,17 @@ export async function fetchBatchErrorLogs(name, sheet, lines) {
 }
 
 /**
+ * Fetches the current store status — per-sheet row counts and whether the
+ * on-disk Excel files exist.  Used to show upload prompts on first launch.
+ *
+ * @returns {Promise<{ benefits: { count, fileExists }, tax: { count, fileExists }, total: number }>}
+ */
+export async function fetchStoreStatus() {
+  const res = await client.get(API_PATHS.storeStatus);
+  return res.data.data;
+}
+
+/**
  * Executes a batch qclient.sh command on the remote server via SSH.
  *
  * @param {string} command     - The full qclient.sh command string (from CommandViewer)

@@ -6,15 +6,23 @@
  *   - Dashboard is lazy-loaded (code-split) so the modal bundle is not
  *     downloaded until the user first navigates to the page.
  *   - QueryClient is created outside the component so it is never recreated.
+ *
+ * Persistence:
+ *   - Both Benefits and Tax batch data are prefetched into the React Query
+ *     cache on app mount (see BatchPrefetcher below).  This means switching
+ *     to either tab is instant — no loading spinner — on every page load or
+ *     browser refresh, because the server already has the data in memory from
+ *     the persisted Excel files in data/.
  */
 
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Box, CircularProgress }           from '@mui/material';
 
 import { AppThemeProvider } from './context/ThemeContext';
 import { BatchProvider }    from './context/BatchContext';
+import { fetchAllBatches }  from './services/apiService';
 
 // Lazy-load Dashboard (and transitively BatchDetailModal) — deferred until first render
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -28,9 +36,41 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Prefetches both Benefits and Tax batch data into the React Query cache as
+ * soon as the app mounts.  Uses the same query key ['batches', 'all'] that
+ * useAllBatches uses, so the data is immediately available when the user
+ * switches to either tab — no loading state, no extra network request.
+ *
+ * This component renders nothing — it exists purely for the side-effect.
+ * It is intentionally placed inside QueryClientProvider so it can call
+ * useQueryClient(), but outside BatchProvider / Dashboard so the prefetch
+ * fires before any tab-specific query is enabled.
+ */
+function BatchPrefetcher() {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    // prefetchQuery only fires a network request if the cache is empty or stale.
+    // On a browser refresh the in-memory cache is wiped, so this always fetches
+    // once on first mount — populating data for both Benefits and Tax instantly.
+    qc.prefetchQuery({
+      queryKey: ['batches', 'all'],
+      queryFn:  () => fetchAllBatches(),
+      staleTime: 5 * 60_000,
+    }).catch(() => {
+      // Prefetch errors are non-fatal — the individual tab will retry on demand
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return null;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <BatchPrefetcher />
       <AppThemeProvider>
         <BatchProvider>
           <BrowserRouter>

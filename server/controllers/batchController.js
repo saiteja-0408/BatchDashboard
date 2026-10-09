@@ -6,8 +6,38 @@
  * No business logic lives here.
  */
 
+const fs           = require('fs');
 const excelService = require('../services/excelService');
 const sshService   = require('../services/sshService');
+
+/**
+ * GET /api/batches/status
+ * Returns the current in-memory store counts and whether the on-disk Excel
+ * files exist for each sheet.  Used by the client to show upload prompts when
+ * neither file has been uploaded yet.
+ */
+async function getStoreStatus(req, res) {
+  const summary = excelService.getSummary();
+  const benefitsFile = excelService.getTargetFilePath('benefits');
+  const taxFile      = excelService.getTargetFilePath('tax');
+
+  res.json({
+    success: true,
+    data: {
+      benefits: {
+        count:      summary.benefits,
+        fileExists: fs.existsSync(benefitsFile),
+        filePath:   benefitsFile,
+      },
+      tax: {
+        count:      summary.tax,
+        fileExists: fs.existsSync(taxFile),
+        filePath:   taxFile,
+      },
+      total: summary.total,
+    },
+  });
+}
 
 /**
  * GET /api/batches?sheet=benefits|tax
@@ -185,4 +215,4 @@ async function getBatchErrorLogs(req, res) {
   return _serveBatchLog(req, res, 'error');
 }
 
-module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, getBatchLogs, getBatchErrorLogs };
+module.exports = { getAllBatches, getSummary, searchBatches, filterBatches, getBatchByName, getBatchLogs, getBatchErrorLogs, getStoreStatus };

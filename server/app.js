@@ -51,6 +51,18 @@ app.use(errorHandler);
 // ── Bootstrap: read both Excel files before accepting requests ────────────────
 async function bootstrap() {
   const dataDir = path.resolve(process.env.DATA_DIR || './data');
+
+  // Ensure the data directory exists so uploads never fail on a fresh checkout
+  // where the directory has not been created yet.
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+      console.log(`[startup] Created data directory: ${dataDir}`);
+    }
+  } catch (mkdirErr) {
+    console.warn(`[startup] Could not create data directory "${dataDir}": ${mkdirErr.message}`);
+  }
+
   const benefitsPath = process.env.BENEFITS_EXCEL_PATH
     ? path.resolve(process.env.BENEFITS_EXCEL_PATH)
     : path.join(dataDir, 'benefits.xlsx');
@@ -58,20 +70,31 @@ async function bootstrap() {
     ? path.resolve(process.env.TAX_EXCEL_PATH)
     : path.join(dataDir, 'tax.xlsx');
 
-  const missingFiles = [
-    { label: 'benefits workbook', absPath: benefitsPath },
-    { label: 'tax workbook',      absPath: taxPath },
-  ].filter(({ absPath }) => !fs.existsSync(absPath));
+  // Log which files exist and which are missing — missing files are not an error
+  // (the server starts with an empty store and populates when a file is uploaded).
+  const fileStatus = [
+    { label: 'benefits', absPath: benefitsPath },
+    { label: 'tax',      absPath: taxPath },
+  ].map(({ label, absPath }) => ({
+    label,
+    absPath,
+    exists: fs.existsSync(absPath),
+  }));
 
-  if (missingFiles.length > 0) {
-    missingFiles.forEach(({ label, absPath }) =>
-      console.warn(`[startup] WARNING: ${label} not found at ${absPath}`)
-    );
-  }
+  fileStatus.forEach(({ label, absPath, exists }) => {
+    if (exists) {
+      console.log(`[startup] Found ${label} workbook: ${absPath}`);
+    } else {
+      console.warn(`[startup] ${label} workbook not found at ${absPath} — store will be empty until a file is uploaded.`);
+    }
+  });
 
   try {
     const { count } = await excelService.loadFromFiles(benefitsPath, taxPath);
-    console.log(`[startup] Loaded ${count} batch(es) from benefits & tax files`);
+    const bCount = count > 0
+      ? ` (${fileStatus.find(f => f.label === 'benefits')?.exists ? 'benefits loaded' : 'benefits empty'}, ${fileStatus.find(f => f.label === 'tax')?.exists ? 'tax loaded' : 'tax empty'})`
+      : '';
+    console.log(`[startup] Loaded ${count} batch(es) from disk${bCount}`);
   } catch (err) {
     console.error(`[startup] Failed to load Excel files: ${err.message}`);
     console.warn('[startup] Server starting with empty batch store.');
