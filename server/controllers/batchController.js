@@ -155,9 +155,15 @@ async function _serveBatchLog(req, res, logType) {
 
   const logDir = resolveBatchLogDir(batch);
 
+  // When ACTUAL_BATCH_NAME is present in arguments, both the log directory
+  // and the log filename on the server use that name — pass it through so
+  // the SSH fetch constructs the correct filename (not the schedule entry name).
+  const actualBatchName = extractActualBatchName(batch.arguments);
+  const logBatchName    = actualBatchName || batch.batchName;
+
   const logContent = logType === 'error'
-    ? await sshService.fetchErrorLog(logDir, batch.batchName, lines)
-    : await sshService.fetchTodayLog(logDir, batch.batchName, lines);
+    ? await sshService.fetchErrorLog(logDir, logBatchName, lines)
+    : await sshService.fetchTodayLog(logDir, logBatchName, lines);
 
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.send(logContent);
