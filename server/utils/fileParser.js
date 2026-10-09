@@ -93,6 +93,12 @@ function matchHeaderField(rawHeader) {
     }
   }
 
+  // If the header refers to child or parent relationships/references,
+  // do not map it to the primary batch model properties.
+  if (key.includes('child') || key.includes('parent')) {
+    return null;
+  }
+
   // Heuristic substring match
   if (key.includes('batchname') || key.includes('jobname') || key.startsWith('batch') || key.startsWith('job') || key.includes('process') || key.includes('program')) {
     return 'batchName';
@@ -100,7 +106,7 @@ function matchHeaderField(rawHeader) {
   if (key.includes('argument') || key.includes('jvm') || key.includes('args') || key.includes('param') || key.includes('flag') || key.includes('option')) {
     return 'arguments';
   }
-  if (key.includes('schedule') || key.includes('jobgroup') || key.includes('sched') || key.includes('cron') || key.includes('frequency') || key.includes('timing') || key.includes('group')) {
+  if (key.includes('schedule') || key.includes('jobgroup') || key.includes('sched') || key.includes('cron') || key.includes('frequency') || key.includes('timing') || key.includes('groupname') || key === 'group') {
     return 'scheduleName';
   }
   if (key.includes('trigger')) {

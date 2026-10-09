@@ -93,9 +93,9 @@ export const SHEET_LABELS = {
 
 // ── Column display labels ─────────────────────────────────────────────────────
 export const COLUMN_LABELS = {
-  batchName:     'Batch Name',
-  arguments:     'Arguments',
-  scheduleName:  'Schedule Name / Job Group',
+  batchName:     'Batch Name/Job Name',
+  arguments:     'Batch Arguments/JVM Arguments',
+  scheduleName:  'Schedule Name/ Job Group Name',
   triggerNeeded: 'Trigger Needed',
   sheetSource:   'Sheet',
   logDir:        'Log Directory',
@@ -104,9 +104,9 @@ export const COLUMN_LABELS = {
 // ── Table: sortable column definitions ───────────────────────────────────────
 // 'sheetSource' column removed — tab already indicates which sheet is active.
 export const SORTABLE_COLUMNS = [
-  { id: 'batchName',     label: 'Batch Name' },
-  { id: 'scheduleName',  label: 'Schedule Name / Job Group' },
-  { id: 'arguments',     label: 'Arguments' },
+  { id: 'batchName',     label: 'Batch Name/Job Name' },
+  { id: 'scheduleName',  label: 'Schedule Name/ Job Group Name' },
+  { id: 'arguments',     label: 'Batch Arguments/JVM Arguments' },
   { id: 'triggerNeeded', label: 'Trigger Needed' },
 ];
 

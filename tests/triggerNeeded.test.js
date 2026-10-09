@@ -76,6 +76,39 @@ describe('columnMapping.config — Trigger Needed entry', () => {
   });
 });
 
+
+// ── 2b. Parser Mapping Tests — child columns ignored ───────────────────────
+
+const { parseExcelBuffer } = require('../server/utils/fileParser');
+
+describe('File Parser — child/parent reference column mapping exclusion', () => {
+  test('Child Batch Reference column is ignored and does not override scheduleName (empty case)', async () => {
+    const csvContent = 
+      `Batch Name/Job Name,Schedule Name/ Job Group Name,Child Batch Reference/Child Job Reference With Group after = sign,Trigger Needed\n` +
+      `BatchMSAccessSaturdayExcelReports,MSAccess_reports_saturday_4am,,Y`;
+    const buffer = Buffer.from(csvContent, 'utf-8');
+    const { rows } = await parseExcelBuffer(buffer, 'benefits');
+    
+    expect(rows).toHaveLength(1);
+    expect(rows[0].batchName).toBe('BatchMSAccessSaturdayExcelReports');
+    expect(rows[0].scheduleName).toBe('MSAccess_reports_saturday_4am');
+    expect(rows[0].triggerNeeded).toBe('Y');
+  });
+
+  test('Child Batch Reference column containing value is ignored and does not override non-empty scheduleName', async () => {
+    const csvContent = 
+      `Batch Name/Job Name,Schedule Name/ Job Group Name,Child Batch Reference/Child Job Reference With Group after = sign,Trigger Needed\n` +
+      `BatchGetSummaryRptOnDecisionLetterTaxa,appeals_reports_145pm,BatchGetSummaryRptOnAppealDecisionLetterForOverpayment,`;
+    const buffer = Buffer.from(csvContent, 'utf-8');
+    const { rows } = await parseExcelBuffer(buffer, 'benefits');
+    
+    expect(rows).toHaveLength(1);
+    expect(rows[0].batchName).toBe('BatchGetSummaryRptOnDecisionLetterTaxa');
+    expect(rows[0].scheduleName).toBe('appeals_reports_145pm');
+    expect(rows[0].triggerNeeded).toBe('');
+  });
+});
+
 // ── 3. Integration — field in API response ────────────────────────────────────
 
 const request    = require('supertest');
