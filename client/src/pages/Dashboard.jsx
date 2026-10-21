@@ -23,6 +23,7 @@ import { SearchBar }        from '../components/SearchBar/SearchBar';
 import { BatchTable }       from '../components/BatchTable/BatchTable';
 import { BatchDetailModal } from '../components/BatchDetailModal/BatchDetailModal';
 import { StatusReportTab }  from '../components/StatusReportTab/StatusReportTab';
+import { EmailReportButton } from '../components/EmailReportModule';
 
 import { useBatchContext }   from '../context/BatchContext';
 import { useAllBatches }     from '../hooks/useBatches';
@@ -210,18 +211,21 @@ export default function Dashboard() {
         {/* Action buttons — right side of header */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
           {isStatusReportTab ? (
-            /* ── Status Report: single Refresh button ── */
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={srFetching
-                ? <CircularProgress size={14} color="inherit" />
-                : <RefreshIcon />}
-              onClick={srRefresh}
-              disabled={srFetching}
-            >
-              Refresh
-            </Button>
+            /* ── Status Report: Refresh + Email Status Report ── */
+            <>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={srFetching
+                  ? <CircularProgress size={14} color="inherit" />
+                  : <RefreshIcon />}
+                onClick={srRefresh}
+                disabled={srFetching}
+              >
+                Refresh
+              </Button>
+              <EmailReportButton onSent={srRefresh} disabled={srFetching} />
+            </>
           ) : (
             /* ── Benefits / Tax: Refresh + Upload ── */
             <>

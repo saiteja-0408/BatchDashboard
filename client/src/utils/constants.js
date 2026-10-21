@@ -47,6 +47,8 @@ export const API_PATHS = {
   // Status report — ?fresh=true bypasses server cache and always hits the DB.
   // Used by the scheduled polling path so every interval tick gets live data.
   statusReportFresh: () => `${API_BASE}/status-report?fresh=true`,
+  // Email dispatch — POST /api/status-report/email
+  statusReportEmail: () => `${API_BASE}/status-report/email`,
 };
 
 /** Default auto-refresh interval for the current-tasks column (ms). */

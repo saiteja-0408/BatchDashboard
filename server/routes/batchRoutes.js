@@ -17,6 +17,7 @@ const uploadController       = require('../controllers/uploadController');
 const currentTasksController = require('../controllers/currentTasksController');
 const statusReportController = require('../controllers/statusReportController');
 const runCommandController   = require('../controllers/runCommandController');
+const emailReportController  = require('../controllers/emailReportController');
 const { asyncWrapper }       = require('../middlewares/errorHandler');
 
 const os = require('os');
@@ -48,7 +49,8 @@ router.post('/batch/run-command', asyncWrapper(runCommandController.runCommand))
 // ── Current-tasks route ───────────────────────────────────────────────────────
 router.get('/current-tasks',   asyncWrapper(currentTasksController.getCurrentTasks));
 
-// ── Status report route ───────────────────────────────────────────────────────
-router.get('/status-report',   asyncWrapper(statusReportController.getStatusReport));
+// ── Status report routes ──────────────────────────────────────────────────────
+router.get('/status-report',         asyncWrapper(statusReportController.getStatusReport));
+router.post('/status-report/email',  asyncWrapper(emailReportController.sendEmailReport));
 
 module.exports = router;
