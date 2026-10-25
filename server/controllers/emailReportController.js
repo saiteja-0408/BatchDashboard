@@ -33,6 +33,54 @@
 'use strict';
 
 const nodemailer = require('nodemailer');
+const { queryDb2 } = require('../services/db2Service');
+
+// ── Automated DB Check Queries ────────────────────────────────────────────────
+
+/**
+ * Executes a configured SQL query from .env using db2Service.
+ * Returns { count, rows, configured, error }.
+ *
+ * @param {string} envVarName
+ * @returns {Promise<{ count: number, rows: Array, configured: boolean, error?: string }>}
+ */
+async function executeCheckQuery(envVarName) {
+  const sql = process.env[envVarName];
+  if (!sql || !sql.trim()) {
+    return { count: 0, rows: [], configured: false };
+  }
+  try {
+    const rows = await queryDb2(sql);
+    const safeRows = Array.isArray(rows) ? rows : [];
+    return { count: safeRows.length, rows: safeRows, configured: true };
+  } catch (err) {
+    console.warn(`[email-report] Query "${envVarName}" failed: ${err.message}`);
+    return { count: 0, rows: [], configured: true, error: err.message };
+  }
+}
+
+/**
+ * Resolves email configuration metadata from environment variables.
+ *
+ * @param {string} [timestamp]
+ * @returns {{ from: string, to: string, cc: string, subject: string, senderName: string, senderTitle: string, senderEmail: string, senderPhone: string }}
+ */
+function getEmailConfig(timestamp) {
+  const dateStr = timestamp
+    ? new Date(timestamp).toLocaleDateString('en-US')
+    : new Date().toLocaleDateString('en-US');
+
+  return {
+    from:        process.env.EMAIL_REPORT_FROM || process.env.SMTP_FROM || 'rabatthula@mdes.ms.gov',
+    to:          process.env.EMAIL_REPORT_TO || 'team@mdes.ms.gov',
+    cc:          process.env.EMAIL_REPORT_CC || '',
+    subject:     `[MS Daily Health Check] Verification Status Report — ${dateStr}`,
+    senderName:  process.env.EMAIL_SENDER_NAME || 'Ramesh_Batthula',
+    senderTitle: process.env.EMAIL_SENDER_TITLE || 'Application Developer',
+    senderEmail: process.env.EMAIL_SENDER_EMAIL || 'rabatthula@mdes.ms.gov',
+    senderPhone: process.env.EMAIL_SENDER_PHONE || '+1 (904) 408 - 7037',
+  };
+}
 
 // ── Input validation ──────────────────────────────────────────────────────────
 
@@ -103,16 +151,26 @@ function groupAnswersByCategory(answers) {
 }
 
 /**
- * Builds the HTML email body.
+ * Builds the HTML email body matching Screenshots 2, 3, and 4.
  *
  * @param {{ reportId, timestamp, submittedBy, headerComment, answers }} payload
+ * @param {Object} [customEmailConfig]
  * @returns {string}  HTML string
  */
-function buildEmailHtml(payload) {
-  const { reportId, timestamp, submittedBy, headerComment, answers } = payload;
+function buildEmailHtml(payload, customEmailConfig = null) {
+  const { timestamp, headerComment, answers } = payload;
+  const cfg = customEmailConfig || getEmailConfig(timestamp);
 
   const formattedDate = (() => {
-    try { return new Date(timestamp).toLocaleString(); } catch { return timestamp; }
+    try {
+      const d = new Date(timestamp);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${mm}/${dd}/${yyyy}`;
+    } catch {
+      return new Date().toLocaleDateString('en-US');
+    }
   })();
 
   const esc = (s) => String(s)
@@ -121,74 +179,98 @@ function buildEmailHtml(payload) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-  const valueLabel = (v) =>
-    v === 'yes' ? '<span style="color:#2e7d32;font-weight:700">YES</span>'
-    : v === 'no' ? '<span style="color:#c62828;font-weight:700">NO</span>'
-    : '—';
+  // Converts plaintext URLs into clickable hyperlinks
+  const linkify = (text) => {
+    if (!text) return '';
+    const escaped = esc(text);
+    return escaped.replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:#0563c1;text-decoration:underline;">$1</a>'
+    ).replace(/\n/g, '<br>');
+  };
 
   const categories = groupAnswersByCategory(answers);
 
-  const categoryTables = Array.from(categories.entries()).map(([cat, items]) => {
-    const rows = items.map((a) => `
-      <tr>
-        <td style="padding:6px 10px;border:1px solid #ddd;font-size:13px">${esc(a.questionLabel)}</td>
-        <td style="padding:6px 10px;border:1px solid #ddd;text-align:center;white-space:nowrap">${valueLabel(a.value)}</td>
-        <td style="padding:6px 10px;border:1px solid #ddd;font-size:12px;color:#555">${a.comment ? esc(a.comment) : '<em style="color:#aaa">—</em>'}</td>
-      </tr>`).join('');
+  // Build category table rows
+  const tableRows = Array.from(categories.entries()).map(([cat, items]) => {
+    const isRpa = cat.includes('RPA');
+    const headerTitle = isRpa ? `RPA (BOT) Run – ${formattedDate}` : cat;
+
+    const rows = items.map((a) => {
+      // Special row handling
+      if (a.questionId === 'app-mobile-app-check') {
+        return `
+          <tr>
+            <td style="padding:6px 10px;border:1px solid #000;font-size:13px;font-family:Calibri,Arial,sans-serif;">${esc(a.questionLabel)}</td>
+            <td style="padding:6px 10px;border:1px solid #000;font-size:13px;font-family:Calibri,Arial,sans-serif;font-weight:bold;">NOTE - This validation is no longer applicable and can be disregarded.</td>
+          </tr>`;
+      }
+
+      let statusDisplay = '';
+      const upperVal = a.value ? a.value.toUpperCase() : 'YES';
+      const commentHtml = linkify(a.comment);
+
+      if (commentHtml) {
+        statusDisplay = `${upperVal}-<br>${commentHtml}`;
+      } else {
+        statusDisplay = upperVal;
+      }
+
+      return `
+        <tr>
+          <td style="padding:6px 10px;border:1px solid #000;font-size:13px;font-family:Calibri,Arial,sans-serif;width:45%;">${esc(a.questionLabel)}</td>
+          <td style="padding:6px 10px;border:1px solid #000;font-size:13px;font-family:Calibri,Arial,sans-serif;width:55%;">${statusDisplay}</td>
+        </tr>`;
+    }).join('');
 
     return `
-      <h3 style="font-size:14px;margin:20px 0 8px;color:#1565c0;border-bottom:2px solid #1565c0;padding-bottom:4px">
-        ${esc(cat)}
-      </h3>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
-        <thead>
-          <tr style="background:#e3f2fd">
-            <th style="padding:7px 10px;border:1px solid #ddd;text-align:left;font-size:12px;width:55%">Check Item</th>
-            <th style="padding:7px 10px;border:1px solid #ddd;text-align:center;font-size:12px;width:15%">Status</th>
-            <th style="padding:7px 10px;border:1px solid #ddd;text-align:left;font-size:12px;width:30%">Comment</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+      <tr style="background-color:#d9e1f2;">
+        <th style="padding:6px 10px;border:1px solid #000;text-align:left;font-size:13px;font-family:Calibri,Arial,sans-serif;font-weight:bold;">${esc(headerTitle)}</th>
+        <th style="padding:6px 10px;border:1px solid #000;text-align:left;font-size:13px;font-family:Calibri,Arial,sans-serif;">${cat === 'Application Monitoring' ? '<strong>Verification Status</strong>' : ''}</th>
+      </tr>
+      ${rows}`;
   }).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>MS Daily Health Check — Verification Status Report</title></head>
-<body style="font-family:Arial,Helvetica,sans-serif;margin:0;padding:20px;background:#f5f5f5">
-  <div style="max-width:800px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:6px;overflow:hidden">
+<head>
+  <meta charset="UTF-8">
+  <title>MS Daily Health Check</title>
+</head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#000;margin:20px;line-height:1.4;background-color:#ffffff;">
 
-    <!-- Header banner -->
-    <div style="background:#1565c0;padding:16px 24px">
-      <h1 style="margin:0;color:#fff;font-size:18px">MS Daily Health Check — Verification Status Report</h1>
-    </div>
-
-    <div style="padding:24px">
-
-      <!-- Metadata -->
-      <table style="font-size:13px;margin-bottom:16px;color:#333">
-        <tr><td style="padding:2px 16px 2px 0;font-weight:700;white-space:nowrap">Report ID</td><td>${esc(reportId)}</td></tr>
-        <tr><td style="padding:2px 16px 2px 0;font-weight:700;white-space:nowrap">Generated</td><td>${esc(formattedDate)}</td></tr>
-        <tr><td style="padding:2px 16px 2px 0;font-weight:700;white-space:nowrap">Submitted By</td><td>${esc(submittedBy)}</td></tr>
-      </table>
-
-      ${headerComment ? `
-      <!-- Overall notes -->
-      <div style="background:#f8f9fa;border-left:4px solid #1565c0;padding:12px 16px;margin-bottom:20px;border-radius:2px">
-        <strong style="font-size:13px">Overall Notes</strong>
-        <p style="margin:6px 0 0;font-size:13px;color:#444">${esc(headerComment).replace(/\n/g, '<br>')}</p>
-      </div>` : ''}
-
-      <!-- Verification tables -->
-      ${categoryTables}
-
-    </div>
-
-    <!-- Footer -->
-    <div style="background:#f5f5f5;padding:10px 24px;font-size:11px;color:#888;border-top:1px solid #ddd">
-      Generated by Batch Monitoring Dashboard &bull; ${esc(formattedDate)}
-    </div>
+  <div style="margin-bottom:16px;">
+    <p style="margin:0 0 12px 0;">Hi All,</p>
+    <p style="margin:0 0 16px 0;">Please find the morning health check for today.</p>
   </div>
+
+  ${headerComment ? `
+  <div style="background:#f8f9fa;border-left:4px solid #4a7bb0;padding:10px 14px;margin-bottom:16px;max-width:800px;">
+    <strong>Notes:</strong>
+    <p style="margin:4px 0 0;font-size:13px;">${esc(headerComment).replace(/\n/g, '<br>')}</p>
+  </div>` : ''}
+
+  <table style="width:100%;max-width:800px;border-collapse:collapse;border:1px solid #000;margin-bottom:24px;">
+    <thead>
+      <tr style="background-color:#4a7bb0;">
+        <th colspan="2" style="border:1px solid #000;padding:8px 10px;text-align:left;font-size:14px;font-weight:bold;color:#000000;font-family:Calibri,Arial,sans-serif;">
+          MS Daily Health Check Activities
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+    </tbody>
+  </table>
+
+  <!-- Signature Block -->
+  <div style="margin-top:24px;font-family:Calibri,Arial,sans-serif;font-size:13px;line-height:1.35;color:#000;">
+    <div style="font-weight:bold;color:#203764;">${esc(cfg.senderName)}</div>
+    <div>${esc(cfg.senderTitle)}</div>
+    <div>Email: <a href="mailto:${esc(cfg.senderEmail)}" style="color:#0563c1;text-decoration:underline;">${esc(cfg.senderEmail)}</a></div>
+    <div>Contact_On: ${esc(cfg.senderPhone)}</div>
+  </div>
+
 </body>
 </html>`;
 }
@@ -228,6 +310,106 @@ function getTransporter() {
 // ── Controller ────────────────────────────────────────────────────────────────
 
 /**
+ * GET /api/status-report/email/auto-checks
+ *
+ * Runs database queries from .env for Database Monitoring & Batch Monitoring.
+ * Returns evaluated auto-checks and email configuration.
+ */
+async function getAutoChecks(req, res) {
+  const [
+    claimFiling,
+    weeklyCert,
+    monitoringExecution,
+    hungBatch,
+    failedBatches,
+    correspondenceClean,
+  ] = await Promise.all([
+    executeCheckQuery('QUERY_DB_CLAIM_FILING'),
+    executeCheckQuery('QUERY_DB_WEEKLY_CERT'),
+    executeCheckQuery('QUERY_BATCH_MONITORING_EXECUTION'),
+    executeCheckQuery('QUERY_BATCH_HUNG'),
+    executeCheckQuery('QUERY_BATCH_FAILED'),
+    executeCheckQuery('QUERY_BATCH_CORRESPONDENCE_CLEAN'),
+  ]);
+
+  const autoChecks = {
+    // Database Monitoring
+    'db-claim-filing': {
+      value: claimFiling.configured ? (claimFiling.count >= 1 ? 'yes' : 'no') : 'yes',
+      comment: '',
+    },
+    'db-weekly-cert-filing': {
+      value: weeklyCert.configured ? (weeklyCert.count >= 1 ? 'yes' : 'no') : 'yes',
+      comment: '',
+    },
+    // Batch Monitoring
+    'batch-monitoring-execution': {
+      value: monitoringExecution.configured ? (monitoringExecution.count >= 1 ? 'yes' : 'no') : 'yes',
+      comment: '',
+    },
+    'batch-hung': {
+      value: hungBatch.configured ? (hungBatch.count >= 1 ? 'yes' : 'no') : 'no',
+      comment: '',
+    },
+    'batch-failed': {
+      value: failedBatches.configured ? (failedBatches.count >= 1 ? 'yes' : 'no') : 'yes',
+      comment: failedBatches.rows && failedBatches.rows.length > 0
+        ? failedBatches.rows.map((r) => r.JOB_NAME || r.job_name || r.name || JSON.stringify(r)).join('\n')
+        : 'BatchValidateBulkFile: https://reemployusa2022.atlassian.net/browse/CMP-207\nBatchPostBulkTaxReportsPayments: https://reemployusa2022.atlassian.net/browse/CMP-210',
+    },
+    'batch-correspondence-temp-clean': {
+      value: correspondenceClean.configured ? (correspondenceClean.count >= 1 ? 'yes' : 'no') : 'yes',
+      comment: '',
+    },
+    // Application Monitoring defaults
+    'app-claimant-login': { value: 'yes', comment: '' },
+    'app-employer-login': { value: 'yes', comment: '' },
+    'app-internal-user-login': { value: 'yes', comment: '' },
+    'app-sso': { value: 'yes', comment: '' },
+    'app-my-q': { value: 'yes', comment: '' },
+    'app-claimant-inquiry': { value: 'yes', comment: '' },
+    'app-view-correspondence-claimant': { value: 'yes', comment: '' },
+    'app-employer-inquiry': { value: 'yes', comment: '' },
+    'app-view-correspondence-employer': { value: 'yes', comment: '' },
+    'app-mobile-app-check': { value: 'na', comment: 'NOTE - This validation is no longer applicable and can be disregarded.' },
+    'app-chatbot-check': { value: 'yes', comment: '' },
+    'app-failed-kafka-records': { value: 'yes', comment: 'https://reemployusa2022.atlassian.net/browse/CMP-133' },
+    // RPA defaults
+    'rpa-ib6-incoming': { value: 'yes', comment: '' },
+    'rpa-work-item-assign': { value: 'yes', comment: '' },
+    'rpa-name-mismatch': { value: 'yes', comment: '' },
+    'rpa-incorrect-wage': { value: 'yes', comment: '' },
+    'rpa-process-employer-response': { value: 'yes', comment: '' },
+    'rpa-workitem-reassign': { value: 'yes', comment: '' },
+  };
+
+  const emailConfig = getEmailConfig();
+
+  return res.status(200).json({
+    success: true,
+    autoChecks,
+    emailConfig,
+  });
+}
+
+/**
+ * POST /api/status-report/email/preview
+ *
+ * Returns the generated HTML string and metadata for previewing.
+ */
+async function previewEmailReport(req, res) {
+  const payload = validatePayload(req.body);
+  const emailConfig = getEmailConfig(payload.timestamp);
+  const html = buildEmailHtml(payload, emailConfig);
+
+  return res.status(200).json({
+    success: true,
+    html,
+    emailConfig,
+  });
+}
+
+/**
  * POST /api/status-report/email
  *
  * @param {import('express').Request}  req
@@ -235,18 +417,17 @@ function getTransporter() {
  */
 async function sendEmailReport(req, res) {
   const payload = validatePayload(req.body);
-
+  const emailConfig = getEmailConfig(payload.timestamp);
   const transporter = getTransporter();
 
   if (!transporter) {
-    // No SMTP configured — log the payload and return success so the UI works
-    // in environments without email (dev, CI, staging without SMTP credentials).
     console.log(
       `[email-report] SMTP not configured — logging payload for report ${payload.reportId}:\n` +
-      `  Submitted by: ${payload.submittedBy}\n` +
-      `  Timestamp:    ${payload.timestamp}\n` +
-      `  Answers:      ${payload.answers.length} question(s)\n` +
-      `  Header note:  ${payload.headerComment || '(none)'}`
+      `  From:        ${emailConfig.from}\n` +
+      `  To:          ${emailConfig.to}\n` +
+      `  Subject:     ${emailConfig.subject}\n` +
+      `  Submitted:   ${payload.submittedBy}\n` +
+      `  Answers:     ${payload.answers.length} question(s)`
     );
     return res.status(200).json({
       success: true,
@@ -255,15 +436,13 @@ async function sendEmailReport(req, res) {
     });
   }
 
-  const htmlBody  = buildEmailHtml(payload);
-  const toList    = process.env.EMAIL_REPORT_TO || process.env.SMTP_FROM || '';
-  const fromAddr  = process.env.SMTP_FROM || 'Batch Dashboard <no-reply@dashboard.local>';
-  const subject   = `[Health Check] Verification Status Report — ${new Date(payload.timestamp).toLocaleDateString()}`;
+  const htmlBody = buildEmailHtml(payload, emailConfig);
 
   const info = await transporter.sendMail({
-    from:    fromAddr,
-    to:      toList,
-    subject,
+    from:    emailConfig.from,
+    to:      emailConfig.to,
+    cc:      emailConfig.cc || undefined,
+    subject: emailConfig.subject,
     html:    htmlBody,
   });
 
@@ -276,4 +455,4 @@ async function sendEmailReport(req, res) {
   });
 }
 
-module.exports = { sendEmailReport };
+module.exports = { getAutoChecks, previewEmailReport, sendEmailReport };

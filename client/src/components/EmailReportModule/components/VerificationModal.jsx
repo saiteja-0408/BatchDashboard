@@ -23,7 +23,7 @@
  *   - Success/error alerts are announced via role="status" / role="alert".
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
   Dialog,
@@ -42,9 +42,12 @@ import {
 import CloseIcon    from '@mui/icons-material/Close';
 import SendIcon     from '@mui/icons-material/Send';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 
 import { useVerificationForm }      from '../hooks/useVerificationForm';
 import { VerificationQuestionItem } from './VerificationQuestionItem';
+import { EmailPreviewModal }        from './EmailPreviewModal';
+import { fetchEmailPreview }        from '../services/emailReportService';
 import { VERIFICATION_QUESTIONS, groupQuestionsByCategory } from '../services/verificationQuestions';
 
 // Pre-compute category groups once (pure static data — no render cost).
@@ -79,22 +82,59 @@ export function VerificationModal({ open, onClose, onSent }) {
     isSubmitting,
     isSubmitSuccess,
     submitError,
+    emailConfig,
+    isLoadingAutoChecks,
+    loadAutoChecks,
     setHeaderComment,
     setAnswer,
     setComment,
+    validate,
+    buildPayload,
     submit,
     reset,
   } = useVerificationForm({ onSuccess: handleSuccess });
 
-  // Clear the success timer if the dialog is closed manually before it fires.
+  // Preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  // Load automated DB checks whenever modal opens
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      loadAutoChecks();
+    } else {
       clearTimeout(successTimerRef.current);
+      setPreviewOpen(false);
+      setPreviewHtml('');
       reset();
     }
     return () => clearTimeout(successTimerRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const handleOpenPreview = async () => {
+    setIsPreviewLoading(true);
+    try {
+      const payload = buildPayload();
+      const res = await fetchEmailPreview(payload);
+      setPreviewHtml(res?.html || '');
+      setPreviewOpen(true);
+    } catch (err) {
+      console.warn('Failed to fetch preview:', err.message);
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const handleClosePreview = () => {
+    setPreviewOpen(false);
+  };
+
+  const handleSendFromPreview = async () => {
+    setPreviewOpen(false);
+    await submit();
+  };
 
   const handleClose = () => {
     if (isSubmitting) return;  // prevent close while in-flight
@@ -295,6 +335,20 @@ export function VerificationModal({ open, onClose, onSent }) {
           </Button>
 
           <Button
+            variant="outlined"
+            color="primary"
+            onClick={handleOpenPreview}
+            disabled={isSubmitting || isPreviewLoading}
+            startIcon={
+              isPreviewLoading
+                ? <CircularProgress size={16} color="inherit" />
+                : <VisibilityIcon fontSize="small" />
+            }
+          >
+            Preview Email
+          </Button>
+
+          <Button
             variant="contained"
             color="primary"
             onClick={submit}
@@ -309,6 +363,16 @@ export function VerificationModal({ open, onClose, onSent }) {
           </Button>
         </DialogActions>
       )}
+
+      {/* ── Preview Sub-Modal ── */}
+      <EmailPreviewModal
+        open={previewOpen}
+        onClose={handleClosePreview}
+        onSend={handleSendFromPreview}
+        previewHtml={previewHtml}
+        emailConfig={emailConfig}
+        isSending={isSubmitting}
+      />
     </Dialog>
   );
 }

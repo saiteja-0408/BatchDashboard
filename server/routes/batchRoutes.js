@@ -50,7 +50,9 @@ router.post('/batch/run-command', asyncWrapper(runCommandController.runCommand))
 router.get('/current-tasks',   asyncWrapper(currentTasksController.getCurrentTasks));
 
 // ── Status report routes ──────────────────────────────────────────────────────
-router.get('/status-report',         asyncWrapper(statusReportController.getStatusReport));
-router.post('/status-report/email',  asyncWrapper(emailReportController.sendEmailReport));
+router.get('/status-report',                     asyncWrapper(statusReportController.getStatusReport));
+router.get('/status-report/email/auto-checks',   asyncWrapper(emailReportController.getAutoChecks));
+router.post('/status-report/email/preview',      asyncWrapper(emailReportController.previewEmailReport));
+router.post('/status-report/email',              asyncWrapper(emailReportController.sendEmailReport));
 
 module.exports = router;

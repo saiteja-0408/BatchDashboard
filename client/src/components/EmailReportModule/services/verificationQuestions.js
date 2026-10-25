@@ -15,7 +15,7 @@ export const VERIFICATION_QUESTIONS = [
   // ── Application Monitoring ───────────────────────────────────────────────
   {
     id:              'app-claimant-login',
-    label:           'Claimant Login is operational',
+    label:           'Claimant Login',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -23,7 +23,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-employer-login',
-    label:           'Employer Login is operational',
+    label:           'Employer Login',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -31,7 +31,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-internal-user-login',
-    label:           'Internal User Login is operational',
+    label:           'Internal User Login',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -39,7 +39,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-sso',
-    label:           'SSO (Single Sign-On) is functioning correctly',
+    label:           'SSO',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -47,7 +47,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-my-q',
-    label:           'My Q is accessible and working',
+    label:           'My Q',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -55,7 +55,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-claimant-inquiry',
-    label:           'Claimant Inquiry is operational',
+    label:           'Claimant Inquiry',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -63,7 +63,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-view-correspondence-claimant',
-    label:           'View Correspondence for Claimant is working',
+    label:           'View Correspondence for Claimant',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -71,7 +71,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-employer-inquiry',
-    label:           'Employer Inquiry is operational',
+    label:           'Employer Inquiry',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -79,15 +79,24 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-view-correspondence-employer',
-    label:           'View Correspondence for Employer is working',
+    label:           'View Correspondence for Employer',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
     category:        'Application Monitoring',
   },
   {
+    id:              'app-mobile-app-check',
+    label:           'Mobile App Check',
+    type:            'text-only',
+    required:        false,
+    commentRequired: false,
+    category:        'Application Monitoring',
+    helpText:        'NOTE - This validation is no longer applicable and can be disregarded.',
+  },
+  {
     id:              'app-chatbot-check',
-    label:           'Chatbot is responding correctly',
+    label:           'Chatbot Check',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -95,18 +104,18 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'app-failed-kafka-records',
-    label:           'No failed Kafka records detected (attach ticket if present)',
+    label:           'Failed Kafka Records',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
     category:        'Application Monitoring',
-    helpText:        'Answer "No" and provide the ticket URL if failed records exist.',
+    helpText:        'Select YES/NO and attach Jira ticket link if present.',
   },
 
   // ── Database Monitoring ──────────────────────────────────────────────────
   {
     id:              'db-claim-filing',
-    label:           'Claim Filing database operations are healthy',
+    label:           'Claim Filing',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -114,7 +123,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'db-weekly-cert-filing',
-    label:           'Weekly Cert Filing database operations are healthy',
+    label:           'Weekly Cert Filing',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -124,7 +133,7 @@ export const VERIFICATION_QUESTIONS = [
   // ── Batch Monitoring ─────────────────────────────────────────────────────
   {
     id:              'batch-monitoring-execution',
-    label:           'All monitoring batches executed successfully',
+    label:           'Monitoring batches Execution',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -132,25 +141,25 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'batch-hung',
-    label:           'No hung batches detected',
+    label:           'Any Hung Batch',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
     category:        'Batch Monitoring',
-    helpText:        'Answer "No" and describe any hung batches in the comment.',
+    helpText:        'Select YES/NO and describe any hung batches.',
   },
   {
     id:              'batch-failed',
-    label:           'No failed batches detected',
+    label:           'Any Failed Batches',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
     category:        'Batch Monitoring',
-    helpText:        'Answer "No" and list any failed batches in the comment.',
+    helpText:        'Select YES/NO and list failed batches with ticket URLs.',
   },
   {
     id:              'batch-correspondence-temp-clean',
-    label:           'Correspondence Temp Table clean-up completed successfully',
+    label:           'Correspondence Temp Table Clean',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -160,7 +169,7 @@ export const VERIFICATION_QUESTIONS = [
   // ── RPA (BOT) Run ────────────────────────────────────────────────────────
   {
     id:              'rpa-ib6-incoming',
-    label:           'IB6 Incoming Process completed successfully',
+    label:           'IB6 incoming Process',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -168,7 +177,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'rpa-work-item-assign',
-    label:           'Work Item Assign process completed successfully',
+    label:           'Work item assign',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -176,7 +185,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'rpa-name-mismatch',
-    label:           'Name Mismatch process completed successfully',
+    label:           'Name mismatch',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -184,7 +193,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'rpa-incorrect-wage',
-    label:           'Incorrect Wage process completed successfully',
+    label:           'Incorrect Wage',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -192,7 +201,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'rpa-process-employer-response',
-    label:           'Process Employer Response completed successfully',
+    label:           'Process Employer Response',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,
@@ -200,7 +209,7 @@ export const VERIFICATION_QUESTIONS = [
   },
   {
     id:              'rpa-workitem-reassign',
-    label:           'WorkItem Reassign process completed successfully',
+    label:           'WorkItem Reassign',
     type:            'yes-no-comment',
     required:        true,
     commentRequired: false,

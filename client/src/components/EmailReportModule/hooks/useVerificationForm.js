@@ -15,24 +15,31 @@
  * @module useVerificationForm
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { VERIFICATION_QUESTIONS } from '../services/verificationQuestions';
-import { dispatchEmailReport, generateReportId } from '../services/emailReportService';
+import { dispatchEmailReport, fetchAutoChecks, generateReportId } from '../services/emailReportService';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Builds the initial answers array from the question definitions.
- * Each question gets an empty value and empty comment.
+ * Each question gets an initial value and comment.
  *
+ * @param {Object} [autoChecksMap={}]
  * @returns {import('../types/emailReport.types').QuestionAnswer[]}
  */
-function buildInitialAnswers() {
-  return VERIFICATION_QUESTIONS.map((q) => ({
-    questionId: q.id,
-    value:      '',
-    comment:    '',
-  }));
+function buildInitialAnswers(autoChecksMap = {}) {
+  return VERIFICATION_QUESTIONS.map((q) => {
+    const auto = autoChecksMap[q.id];
+    let initialValue = auto?.value ?? (q.id === 'app-mobile-app-check' ? 'na' : (q.id === 'batch-hung' ? 'no' : 'yes'));
+    let initialComment = auto?.comment ?? (q.id === 'app-mobile-app-check' ? 'NOTE - This validation is no longer applicable and can be disregarded.' : '');
+
+    return {
+      questionId: q.id,
+      value:      initialValue,
+      comment:    initialComment,
+    };
+  });
 }
 
 /** @returns {import('../types/emailReport.types').VerificationFormState} */
@@ -57,11 +64,39 @@ export function useVerificationForm(options = {}) {
   const { onSuccess } = options;
 
   // ── Core state ─────────────────────────────────────────────────────────────
-  const [formState,       setFormState]       = useState(buildInitialState);
-  const [errors,          setErrors]          = useState(/** @type {import('../types/emailReport.types').ValidationErrors} */({}));
-  const [isSubmitting,    setIsSubmitting]    = useState(false);
-  const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
-  const [submitError,     setSubmitError]     = useState(/** @type {string|null} */(null));
+  const [formState,          setFormState]          = useState(buildInitialState);
+  const [errors,             setErrors]             = useState(/** @type {import('../types/emailReport.types').ValidationErrors} */({}));
+  const [isSubmitting,       setIsSubmitting]       = useState(false);
+  const [isSubmitSuccess,    setIsSubmitSuccess]    = useState(false);
+  const [submitError,        setSubmitError]        = useState(/** @type {string|null} */(null));
+  const [emailConfig,        setEmailConfig]        = useState(null);
+  const [isLoadingAutoChecks, setIsLoadingAutoChecks] = useState(false);
+
+  /** Loads automated DB checks and email settings from server */
+  const loadAutoChecks = useCallback(async () => {
+    setIsLoadingAutoChecks(true);
+    try {
+      const data = await fetchAutoChecks();
+      if (data?.autoChecks) {
+        setFormState((prev) => ({
+          ...prev,
+          answers: buildInitialAnswers(data.autoChecks),
+        }));
+      }
+      if (data?.emailConfig) {
+        setEmailConfig(data.emailConfig);
+      }
+    } catch (err) {
+      console.warn('Failed to load auto-checks from server:', err.message);
+      // Fall back to local defaults
+      setFormState((prev) => ({
+        ...prev,
+        answers: buildInitialAnswers({}),
+      }));
+    } finally {
+      setIsLoadingAutoChecks(false);
+    }
+  }, []);
 
   // ── Setters ────────────────────────────────────────────────────────────────
 
@@ -250,10 +285,14 @@ export function useVerificationForm(options = {}) {
     isSubmitting,
     isSubmitSuccess,
     submitError,
+    emailConfig,
+    isLoadingAutoChecks,
+    loadAutoChecks,
     setHeaderComment,
     setAnswer,
     setComment,
     validate,
+    buildPayload,
     submit,
     reset,
   };

@@ -10,6 +10,7 @@
 
 export { EmailReportButton }   from './components/EmailReportButton';
 export { VerificationModal }   from './components/VerificationModal';
+export { EmailPreviewModal }   from './components/EmailPreviewModal';
 // Hook and service exported for testing; not required by consumers.
 export { useVerificationForm } from './hooks/useVerificationForm';
 export { dispatchEmailReport, generateReportId } from './services/emailReportService';

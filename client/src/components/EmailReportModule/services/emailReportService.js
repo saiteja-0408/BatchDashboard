@@ -55,6 +55,27 @@ export function generateReportId() {
 }
 
 /**
+ * Fetches automated DB check values and environment email configuration from the backend.
+ *
+ * @returns {Promise<{ success: boolean, autoChecks: Object, emailConfig: Object }>}
+ */
+export async function fetchAutoChecks() {
+  const res = await emailClient.get(API_PATHS.statusReportEmailAutoChecks());
+  return res.data;
+}
+
+/**
+ * Fetches the rendered email HTML preview and metadata from the backend.
+ *
+ * @param {import('../types/emailReport.types').EmailReportPayload} payload
+ * @returns {Promise<{ success: boolean, html: string, emailConfig: Object }>}
+ */
+export async function fetchEmailPreview(payload) {
+  const res = await emailClient.post(API_PATHS.statusReportEmailPreview(), payload);
+  return res.data;
+}
+
+/**
  * Dispatches the email status report to the backend.
  *
  * @param {import('../types/emailReport.types').EmailReportPayload} payload

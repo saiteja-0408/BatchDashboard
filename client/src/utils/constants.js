@@ -49,6 +49,10 @@ export const API_PATHS = {
   statusReportFresh: () => `${API_BASE}/status-report?fresh=true`,
   // Email dispatch — POST /api/status-report/email
   statusReportEmail: () => `${API_BASE}/status-report/email`,
+  // Email auto-checks — GET /api/status-report/email/auto-checks
+  statusReportEmailAutoChecks: () => `${API_BASE}/status-report/email/auto-checks`,
+  // Email preview — POST /api/status-report/email/preview
+  statusReportEmailPreview: () => `${API_BASE}/status-report/email/preview`,
 };
 
 /** Default auto-refresh interval for the current-tasks column (ms). */
