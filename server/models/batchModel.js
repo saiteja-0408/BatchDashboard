@@ -50,8 +50,8 @@ function createBatch(raw) {
     arguments:     safeStr(raw.arguments),
     scheduleName:  safeStr(raw.scheduleName),
     triggerNeeded: normTrigger(raw.triggerNeeded),
-    sheetSource:   safeStr(raw.sheetSource),   // set by parser
-    logDir:        safeStr(raw.logDir),         // set by parser
+    sheetSource:   safeStr(raw.sheetSource).toLowerCase(),   // set by parser
+    logDir:        safeStr(raw.logDir),                      // set by parser
   };
 
   return batch;

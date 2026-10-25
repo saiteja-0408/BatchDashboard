@@ -478,6 +478,11 @@ function parseCsvBuffer(buffer, defaultSheetSource = 'benefits') {
  * @returns {Promise<{ rows: Object[], warnings: string[] }>}
  */
 async function parseExcelFile(filePath, defaultSheetSource = null) {
+  const fs = require('fs');
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+
   // Infer defaultSheetSource from file path if not passed
   if (!defaultSheetSource && typeof filePath === 'string') {
     const lowerPath = filePath.toLowerCase();
@@ -490,12 +495,17 @@ async function parseExcelFile(filePath, defaultSheetSource = null) {
     await workbook.xlsx.readFile(filePath);
     return _extractRowsFromWorkbook(workbook, defaultSheetSource);
   } catch (excelJsErr) {
-    console.warn(`[fileParser] ExcelJS failed to read ${filePath} (${excelJsErr.message}), falling back to universal XLSX parser...`);
     try {
-      return parseWithXLSXLibrary(filePath, defaultSheetSource);
-    } catch (xlsxLibErr) {
-      console.error(`[fileParser] Universal XLSX parser also failed for ${filePath}: ${xlsxLibErr.message}`);
-      throw excelJsErr;
+      const buffer = fs.readFileSync(filePath);
+      return await parseExcelBuffer(buffer, defaultSheetSource);
+    } catch (bufferErr) {
+      console.warn(`[fileParser] Buffer parsing fallback failed for ${filePath} (${bufferErr.message}), trying XLSX library direct read...`);
+      try {
+        return parseWithXLSXLibrary(filePath, defaultSheetSource);
+      } catch (xlsxLibErr) {
+        console.error(`[fileParser] Universal XLSX parser also failed for ${filePath}: ${xlsxLibErr.message}`);
+        throw excelJsErr;
+      }
     }
   }
 }

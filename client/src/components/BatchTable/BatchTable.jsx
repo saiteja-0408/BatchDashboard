@@ -342,7 +342,7 @@ export function BatchTable({ batches, isLoading, isError }) {
     return (
       <Box p={4} textAlign="center">
         <Typography color="text.secondary">
-          No batches found. Check that benefits.xlsx and tax.xlsx are present in the data directory and restart the server.
+          No batches found. Upload a sheet using the Upload button above or ensure benefits / tax files exist in the data directory.
         </Typography>
       </Box>
     );

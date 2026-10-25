@@ -19,6 +19,8 @@ const path = require('path');
 const { parseExcelFile, parseExcelBuffer } = require('../utils/fileParser');
 const { createBatch, validateBatch } = require('../models/batchModel');
 
+const VALID_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb', '.csv'];
+
 /**
  * In-memory store and file tracking.
  * @type {import('../models/batchModel').BatchModel[]}
@@ -34,34 +36,48 @@ let _fileMtimes = {
 /**
  * Resolves configured or default file path for a given sheet ('benefits' | 'tax').
  * Uses cross-platform path.resolve and path.join.
+ * Finds the latest uploaded sheet file across all supported formats (.xlsx, .csv, .xls, .xlsm, .xlsb).
+ *
  * @param {'benefits'|'tax'} sheetSource
  * @returns {string}
  */
 function getTargetFilePath(sheetSource) {
-  if (sheetSource === 'benefits') {
+  const normSheet = String(sheetSource).toLowerCase().trim();
+
+  if (normSheet === 'benefits') {
     if (process.env.BENEFITS_EXCEL_PATH) return path.resolve(process.env.BENEFITS_EXCEL_PATH);
-    if (_benefitsPath) return _benefitsPath;
-    const dataDir = path.resolve(process.env.DATA_DIR || './data');
-    const xlsxPath = path.join(dataDir, 'benefits.xlsx');
-    const csvPath = path.join(dataDir, 'benefits.csv');
-    if (fs.existsSync(csvPath) && !fs.existsSync(xlsxPath)) {
-      return csvPath;
-    }
-    return xlsxPath;
-  }
-  if (sheetSource === 'tax') {
+    if (_benefitsPath && fs.existsSync(_benefitsPath)) return _benefitsPath;
+  } else if (normSheet === 'tax') {
     if (process.env.TAX_EXCEL_PATH) return path.resolve(process.env.TAX_EXCEL_PATH);
-    if (_taxPath) return _taxPath;
-    const dataDir = path.resolve(process.env.DATA_DIR || './data');
-    const xlsxPath = path.join(dataDir, 'tax.xlsx');
-    const csvPath = path.join(dataDir, 'tax.csv');
-    if (fs.existsSync(csvPath) && !fs.existsSync(xlsxPath)) {
-      return csvPath;
-    }
-    return xlsxPath;
+    if (_taxPath && fs.existsSync(_taxPath)) return _taxPath;
   }
+
   const dataDir = path.resolve(process.env.DATA_DIR || './data');
-  return path.join(dataDir, `${sheetSource}.xlsx`);
+
+  // Search for existing file for this sheetSource with any supported extension
+  let newestFile = null;
+  let newestMtime = -1;
+
+  for (const ext of VALID_EXTENSIONS) {
+    const candidate = path.join(dataDir, `${normSheet}${ext}`);
+    if (fs.existsSync(candidate)) {
+      try {
+        const mtime = fs.statSync(candidate).mtimeMs;
+        if (mtime > newestMtime) {
+          newestMtime = mtime;
+          newestFile = candidate;
+        }
+      } catch {
+        if (!newestFile) newestFile = candidate;
+      }
+    }
+  }
+
+  if (newestFile) {
+    return newestFile;
+  }
+
+  return path.join(dataDir, `${normSheet}.xlsx`);
 }
 
 /**
@@ -157,7 +173,7 @@ async function syncFromDisk(sheetSource) {
           const { batches } = await _parseToBatches(filePath, src);
           if (batches.length > 0) {
             _store = [
-              ..._store.filter((b) => b.sheetSource !== src),
+              ..._store.filter((b) => (b.sheetSource || '').toLowerCase().trim() !== src),
               ...batches,
             ];
             _fileMtimes[src] = mtime;
@@ -342,65 +358,63 @@ async function reloadSheet(sheetSource, buffer, originalName = null) {
   let ext = '.xlsx';
   if (originalName) {
     const originalExt = path.extname(originalName).toLowerCase();
-    if (originalExt === '.csv') {
-      ext = '.csv';
+    if (VALID_EXTENSIONS.includes(originalExt)) {
+      ext = originalExt;
     }
   }
 
-  // Persist uploaded buffer to configured target Excel file on disk (cross-platform path resolution)
-  try {
-    const dataDir = path.resolve(process.env.DATA_DIR || './data');
-    let targetFile;
-    if (normSheet === 'benefits') {
-      if (process.env.BENEFITS_EXCEL_PATH) {
-        targetFile = path.resolve(process.env.BENEFITS_EXCEL_PATH);
-      } else {
-        targetFile = path.join(dataDir, `benefits${ext}`);
-      }
-    } else if (normSheet === 'tax') {
-      if (process.env.TAX_EXCEL_PATH) {
-        targetFile = path.resolve(process.env.TAX_EXCEL_PATH);
-      } else {
-        targetFile = path.join(dataDir, `tax${ext}`);
-      }
-    } else {
-      targetFile = path.join(dataDir, `${normSheet}${ext}`);
-    }
-
-    const targetDir = path.dirname(targetFile);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-
-    // Clean up alternative extension to prevent conflicts on disk
-    const altExt = ext === '.xlsx' ? '.csv' : '.xlsx';
-    let altFile;
-    if (normSheet === 'benefits' && !process.env.BENEFITS_EXCEL_PATH) {
-      altFile = path.join(dataDir, `benefits${altExt}`);
-    } else if (normSheet === 'tax' && !process.env.TAX_EXCEL_PATH) {
-      altFile = path.join(dataDir, `tax${altExt}`);
-    }
-    if (altFile && fs.existsSync(altFile)) {
-      try {
-        fs.unlinkSync(altFile);
-        console.log(`[excelService] Cleaned up alternate stale sheet file: ${altFile}`);
-      } catch (unlinkErr) {
-        console.warn(`[excelService] Failed to clean up alternate file ${altFile}: ${unlinkErr.message}`);
-      }
-    }
-
-    fs.writeFileSync(targetFile, buffer);
-    if (fs.existsSync(targetFile)) {
-      _fileMtimes[normSheet] = fs.statSync(targetFile).mtimeMs;
-      // Track updated path in _benefitsPath / _taxPath as well
+  // Persist uploaded buffer to configured target Excel/CSV file on disk (skip disk file replacement in test fixtures)
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const dataDir = path.resolve(process.env.DATA_DIR || './data');
+      let targetFile;
       if (normSheet === 'benefits') {
-        _benefitsPath = targetFile;
+        targetFile = process.env.BENEFITS_EXCEL_PATH
+          ? path.resolve(process.env.BENEFITS_EXCEL_PATH)
+          : path.join(dataDir, `benefits${ext}`);
       } else if (normSheet === 'tax') {
-        _taxPath = targetFile;
+        targetFile = process.env.TAX_EXCEL_PATH
+          ? path.resolve(process.env.TAX_EXCEL_PATH)
+          : path.join(dataDir, `tax${ext}`);
+      } else {
+        targetFile = path.join(dataDir, `${normSheet}${ext}`);
       }
+
+      const targetDir = path.dirname(targetFile);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      // Clean up any alternate extension files for this sheet so only the latest sheet exists on disk
+      if (!process.env[`${normSheet.toUpperCase()}_EXCEL_PATH`]) {
+        for (const otherExt of VALID_EXTENSIONS) {
+          if (otherExt !== ext) {
+            const oldFile = path.join(dataDir, `${normSheet}${otherExt}`);
+            if (fs.existsSync(oldFile)) {
+              try {
+                fs.unlinkSync(oldFile);
+                console.log(`[excelService] Cleaned up alternate stale sheet file: ${oldFile}`);
+              } catch (unlinkErr) {
+                console.warn(`[excelService] Failed to clean up alternate file ${oldFile}: ${unlinkErr.message}`);
+              }
+            }
+          }
+        }
+      }
+
+      fs.writeFileSync(targetFile, buffer);
+      if (fs.existsSync(targetFile)) {
+        _fileMtimes[normSheet] = fs.statSync(targetFile).mtimeMs;
+        // Track updated path in _benefitsPath / _taxPath as well
+        if (normSheet === 'benefits') {
+          _benefitsPath = targetFile;
+        } else if (normSheet === 'tax') {
+          _taxPath = targetFile;
+        }
+      }
+    } catch (fsErr) {
+      console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
     }
-  } catch (fsErr) {
-    console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
   }
 
   const bCount = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'benefits').length;
