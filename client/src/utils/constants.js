@@ -94,7 +94,7 @@ export const SHEET_SOURCES = ['status-report', 'benefits', 'tax'];
 export const SHEET_LABELS = {
   benefits:        'Benefits',
   tax:             'Tax',
-  'status-report': 'Status Report',
+  'status-report': 'Todays Batch Executed',
 };
 
 // ── Column display labels ─────────────────────────────────────────────────────

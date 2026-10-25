@@ -16,11 +16,12 @@
  * No static placeholder text — batch name is always substituted at render time.
  */
 
-import React, { useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
   Button, CircularProgress, Collapse, Chip,
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from '@mui/material';
 import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
 import CheckIcon        from '@mui/icons-material/Check';
@@ -272,28 +273,62 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
   const runCmd    = useRunCommand();
   const resumeCmd = useRunCommand();
 
+  // Confirmation prompt dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    action: null, // 'run' | 'resume'
+    title: '',
+    command: '',
+  });
+
   // Reset both output panels whenever a different batch is selected or when
   // the modal closes (batch becomes null ~300ms after close).
   // This prevents stale output from a previous row appearing in the next open.
   useEffect(() => {
     runCmd.reset();
     resumeCmd.reset();
+    setConfirmDialog({ open: false, action: null, title: '', command: '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batch?.batchName]);
 
-  const handleRun    = useCallback(() => {
-    runCmd.reset();
-    runCmd.execute(buildQclientLine(batch, 'runJobOnly'), 'run', batch.logDir);
-  }, [batch, runCmd]);
+  const handleOpenRunConfirm = useCallback(() => {
+    setConfirmDialog({
+      open: true,
+      action: 'run',
+      title: 'Run Batch Job Confirmation',
+      command: buildQclientLine(batch, 'runJobOnly'),
+    });
+  }, [batch]);
 
-  const handleResume = useCallback(() => {
-    resumeCmd.reset();
-    resumeCmd.execute(buildQclientLine(batch, 'resumeJob'), 'resume', batch.logDir);
-  }, [batch, resumeCmd]);
+  const handleOpenResumeConfirm = useCallback(() => {
+    setConfirmDialog({
+      open: true,
+      action: 'resume',
+      title: 'Resume Batch Job Confirmation',
+      command: buildQclientLine(batch, 'resumeJob'),
+    });
+  }, [batch]);
+
+  const handleCloseConfirm = useCallback(() => {
+    setConfirmDialog((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const handleConfirmAction = useCallback(() => {
+    const { action } = confirmDialog;
+    handleCloseConfirm();
+    if (action === 'run') {
+      runCmd.reset();
+      runCmd.execute(buildQclientLine(batch, 'runJobOnly'), 'run', batch.logDir);
+    } else if (action === 'resume') {
+      resumeCmd.reset();
+      resumeCmd.execute(buildQclientLine(batch, 'resumeJob'), 'resume', batch.logDir);
+    }
+  }, [confirmDialog, handleCloseConfirm, batch, runCmd, resumeCmd]);
 
   if (!batch) return null;
 
   return (
+    <>
     <Stack spacing={0} divider={<Divider sx={{ my: 2 }} />}>
 
       {/* ── Change Directory ── */}
@@ -307,7 +342,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
         {SSH_RUN_ENABLED && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <RunButton
-              onClick={handleRun}
+              onClick={handleOpenRunConfirm}
               isLoading={runCmd.status === 'loading'}
             />
             {runCmd.status === 'idle' && (
@@ -332,7 +367,7 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
         {SSH_RUN_ENABLED && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <RunButton
-              onClick={handleResume}
+              onClick={handleOpenResumeConfirm}
               isLoading={resumeCmd.status === 'loading'}
             />
             {resumeCmd.status === 'idle' && (
@@ -367,6 +402,63 @@ export const CommandViewer = React.memo(function CommandViewer({ batch }) {
       </Section>
 
     </Stack>
+
+    {/* ── Run / Resume Confirmation Prompt Dialog ── */}
+    <Dialog
+      open={confirmDialog.open}
+      onClose={handleCloseConfirm}
+      maxWidth="xs"
+      fullWidth
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-description"
+    >
+      <DialogTitle id="confirm-dialog-title" sx={{ fontWeight: 600 }}>
+        {confirmDialog.title || 'Confirm Execution'}
+      </DialogTitle>
+      <DialogContent>
+        <DialogContentText id="confirm-dialog-description" sx={{ color: 'text.primary', mb: 1.5 }}>
+          Are you sure you want to {confirmDialog.action === 'resume' ? 'resume' : 'run'} this batch?
+        </DialogContentText>
+        {batch?.batchName && (
+          <Box
+            sx={{
+              p: 1.25,
+              bgcolor: 'background.default',
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Typography variant="caption" color="text.secondary" display="block" fontWeight={600}>
+              Batch Name:
+            </Typography>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', mb: 1 }}>
+              {batch.batchName}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" fontWeight={600}>
+              Command:
+            </Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', display: 'block', color: 'text.secondary' }}>
+              {confirmDialog.command}
+            </Typography>
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={handleCloseConfirm} color="inherit">
+          Cancel
+        </Button>
+        <Button
+          onClick={handleConfirmAction}
+          variant="contained"
+          color="warning"
+          autoFocus
+        >
+          {confirmDialog.action === 'resume' ? 'Resume' : 'Run'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 });
 
