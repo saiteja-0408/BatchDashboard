@@ -62,6 +62,7 @@ const SPACER_CELL_SX     = { p: 0, border: 0 };
  * sortable: false prevents click handlers on non-data columns.
  */
 const COLUMNS = [
+  { id: 'row_num',          label: '#',            minWidth: 50,  sortable: false },
   { id: 'job_name',         label: 'Job Name',     minWidth: 160, sortable: true  },
   { id: 'job_group',        label: 'Job Group',    minWidth: 140, sortable: true  },
   { id: 'start_time',       label: 'Start Time',   minWidth: 140, sortable: true  },
@@ -550,7 +551,8 @@ export function StatusReportTab({ enabled }) {
         >
           <Table size="small" stickyHeader sx={TABLE_SX}>
             <colgroup>
-              <col style={{ width: '16%' }} />
+              <col style={{ width: '4%'  }} />
+              <col style={{ width: '15%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
@@ -558,9 +560,9 @@ export function StatusReportTab({ enabled }) {
               <col style={{ width: '5%'  }} />
               <col style={{ width: '4%'  }} />
               <col style={{ width: '5%'  }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '10%' }} />
               <col style={{ width: '12%' }} />
+              <col style={{ width: '9%'  }} />
+              <col style={{ width: '11%' }} />
             </colgroup>
             <TableHead>
               <TableRow>
@@ -669,10 +671,18 @@ export function StatusReportTab({ enabled }) {
                               : 'none',
                         }}
                       >
-                        {col.id === '_status'
-                          ? <StatusChip row={row} />
-                          : formatCell(row[col.id], col.id)
-                        }
+                        {col.id === 'row_num' ? (
+                          <Typography
+                            variant="caption"
+                            sx={{ fontWeight: 600, color: 'text.secondary', fontFamily: 'monospace' }}
+                          >
+                            {totalCount - (startIndex + idx)}
+                          </Typography>
+                        ) : col.id === '_status' ? (
+                          <StatusChip row={row} />
+                        ) : (
+                          formatCell(row[col.id], col.id)
+                        )}
                       </TableCell>
                     ))}
                   </TableRow>
