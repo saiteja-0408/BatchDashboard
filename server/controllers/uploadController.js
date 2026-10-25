@@ -78,7 +78,7 @@ async function uploadSheet(req, res) {
 
   // Parse buffer and hot-reload the sheet in the store
   console.log(`[uploadController] Processing buffer through universal parser pipeline for "${sheet}"...`);
-  const { count, warnings, batches } = await excelService.reloadSheet(sheet, req.file.buffer);
+  const { count, warnings, batches } = await excelService.reloadSheet(sheet, req.file.buffer, req.file.originalname);
   console.log(`[uploadController] Successfully processed and reloaded "${sheet}": ${count} batch(es) loaded.`);
 
   res.status(201).json({

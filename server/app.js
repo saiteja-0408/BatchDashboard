@@ -63,12 +63,8 @@ async function bootstrap() {
     console.warn(`[startup] Could not create data directory "${dataDir}": ${mkdirErr.message}`);
   }
 
-  const benefitsPath = process.env.BENEFITS_EXCEL_PATH
-    ? path.resolve(process.env.BENEFITS_EXCEL_PATH)
-    : path.join(dataDir, 'benefits.xlsx');
-  const taxPath = process.env.TAX_EXCEL_PATH
-    ? path.resolve(process.env.TAX_EXCEL_PATH)
-    : path.join(dataDir, 'tax.xlsx');
+  const benefitsPath = excelService.getTargetFilePath('benefits');
+  const taxPath = excelService.getTargetFilePath('tax');
 
   // Log which files exist and which are missing — missing files are not an error
   // (the server starts with an empty store and populates when a file is uploaded).

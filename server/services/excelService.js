@@ -42,13 +42,23 @@ function getTargetFilePath(sheetSource) {
     if (process.env.BENEFITS_EXCEL_PATH) return path.resolve(process.env.BENEFITS_EXCEL_PATH);
     if (_benefitsPath) return _benefitsPath;
     const dataDir = path.resolve(process.env.DATA_DIR || './data');
-    return path.join(dataDir, 'benefits.xlsx');
+    const xlsxPath = path.join(dataDir, 'benefits.xlsx');
+    const csvPath = path.join(dataDir, 'benefits.csv');
+    if (fs.existsSync(csvPath) && !fs.existsSync(xlsxPath)) {
+      return csvPath;
+    }
+    return xlsxPath;
   }
   if (sheetSource === 'tax') {
     if (process.env.TAX_EXCEL_PATH) return path.resolve(process.env.TAX_EXCEL_PATH);
     if (_taxPath) return _taxPath;
     const dataDir = path.resolve(process.env.DATA_DIR || './data');
-    return path.join(dataDir, 'tax.xlsx');
+    const xlsxPath = path.join(dataDir, 'tax.xlsx');
+    const csvPath = path.join(dataDir, 'tax.csv');
+    if (fs.existsSync(csvPath) && !fs.existsSync(xlsxPath)) {
+      return csvPath;
+    }
+    return xlsxPath;
   }
   const dataDir = path.resolve(process.env.DATA_DIR || './data');
   return path.join(dataDir, `${sheetSource}.xlsx`);
@@ -302,7 +312,7 @@ function getSummary() {
  * @param {Buffer} buffer - raw .xlsx/.xls file contents
  * @returns {Promise<{ count: number, warnings: string[], batches: import('../models/batchModel').BatchModel[] }>}
  */
-async function reloadSheet(sheetSource, buffer) {
+async function reloadSheet(sheetSource, buffer, originalName = null) {
   const normSheet = String(sheetSource).toLowerCase().trim();
   const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, normSheet);
 
@@ -328,16 +338,66 @@ async function reloadSheet(sheetSource, buffer) {
     ...incoming,
   ];
 
+  // Determine target extension
+  let ext = '.xlsx';
+  if (originalName) {
+    const originalExt = path.extname(originalName).toLowerCase();
+    if (originalExt === '.csv') {
+      ext = '.csv';
+    }
+  }
+
   // Persist uploaded buffer to configured target Excel file on disk (cross-platform path resolution)
   try {
-    const targetFile = getTargetFilePath(normSheet);
+    const dataDir = path.resolve(process.env.DATA_DIR || './data');
+    let targetFile;
+    if (normSheet === 'benefits') {
+      if (process.env.BENEFITS_EXCEL_PATH) {
+        targetFile = path.resolve(process.env.BENEFITS_EXCEL_PATH);
+      } else {
+        targetFile = path.join(dataDir, `benefits${ext}`);
+      }
+    } else if (normSheet === 'tax') {
+      if (process.env.TAX_EXCEL_PATH) {
+        targetFile = path.resolve(process.env.TAX_EXCEL_PATH);
+      } else {
+        targetFile = path.join(dataDir, `tax${ext}`);
+      }
+    } else {
+      targetFile = path.join(dataDir, `${normSheet}${ext}`);
+    }
+
     const targetDir = path.dirname(targetFile);
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
+
+    // Clean up alternative extension to prevent conflicts on disk
+    const altExt = ext === '.xlsx' ? '.csv' : '.xlsx';
+    let altFile;
+    if (normSheet === 'benefits' && !process.env.BENEFITS_EXCEL_PATH) {
+      altFile = path.join(dataDir, `benefits${altExt}`);
+    } else if (normSheet === 'tax' && !process.env.TAX_EXCEL_PATH) {
+      altFile = path.join(dataDir, `tax${altExt}`);
+    }
+    if (altFile && fs.existsSync(altFile)) {
+      try {
+        fs.unlinkSync(altFile);
+        console.log(`[excelService] Cleaned up alternate stale sheet file: ${altFile}`);
+      } catch (unlinkErr) {
+        console.warn(`[excelService] Failed to clean up alternate file ${altFile}: ${unlinkErr.message}`);
+      }
+    }
+
     fs.writeFileSync(targetFile, buffer);
     if (fs.existsSync(targetFile)) {
       _fileMtimes[normSheet] = fs.statSync(targetFile).mtimeMs;
+      // Track updated path in _benefitsPath / _taxPath as well
+      if (normSheet === 'benefits') {
+        _benefitsPath = targetFile;
+      } else if (normSheet === 'tax') {
+        _taxPath = targetFile;
+      }
     }
   } catch (fsErr) {
     console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
