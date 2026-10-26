@@ -38,25 +38,63 @@ const { queryDb2 } = require('../services/db2Service');
 // ── Automated DB Check Queries ────────────────────────────────────────────────
 
 /**
- * Executes a configured SQL query from .env using db2Service.
- * Returns { count, rows, configured, error }.
+ * Executes one or more SQL queries configured in a single .env variable.
+ *
+ * Multiple queries are separated by a pipe character `|` inside the env value:
+ *   QUERY_BATCH_FAILED=SELECT 1 FROM T WHERE STATUS='F'|SELECT COUNT(*) FROM T2 WHERE ERR=1
+ *
+ * All queries are run in parallel.  The result is the **union** of all rows
+ * returned — so if ANY individual query returns >= 1 row the overall count > 0
+ * (status auto-selected as YES).  Errors in one query do not abort the others.
+ *
+ * Returns { count, rows, configured, errors[] }.
+ *   configured — false when the env var is absent / blank (no DB call is made).
+ *   errors     — array of error messages from any query that threw (may be empty).
  *
  * @param {string} envVarName
- * @returns {Promise<{ count: number, rows: Array, configured: boolean, error?: string }>}
+ * @returns {Promise<{ count: number, rows: Array, configured: boolean, errors: string[] }>}
  */
 async function executeCheckQuery(envVarName) {
-  const sql = process.env[envVarName];
-  if (!sql || !sql.trim()) {
-    return { count: 0, rows: [], configured: false };
+  const raw = process.env[envVarName];
+  if (!raw || !raw.trim()) {
+    return { count: 0, rows: [], configured: false, errors: [] };
   }
-  try {
-    const rows = await queryDb2(sql);
-    const safeRows = Array.isArray(rows) ? rows : [];
-    return { count: safeRows.length, rows: safeRows, configured: true };
-  } catch (err) {
-    console.warn(`[email-report] Query "${envVarName}" failed: ${err.message}`);
-    return { count: 0, rows: [], configured: true, error: err.message };
+
+  // Split on `|` and discard blank segments (tolerates trailing pipes / whitespace)
+  const statements = raw
+    .split('|')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  if (statements.length === 0) {
+    return { count: 0, rows: [], configured: false, errors: [] };
   }
+
+  // Run all statements concurrently; capture errors per-statement
+  const results = await Promise.all(
+    statements.map(async (sql, idx) => {
+      try {
+        const rows = await queryDb2(sql);
+        return { rows: Array.isArray(rows) ? rows : [], error: null };
+      } catch (err) {
+        console.warn(
+          `[email-report] Query "${envVarName}"[${idx + 1}/${statements.length}] failed: ${err.message}`
+        );
+        return { rows: [], error: err.message };
+      }
+    })
+  );
+
+  // Aggregate: merge all rows; collect any errors
+  const allRows  = results.flatMap((r) => r.rows);
+  const errors   = results.map((r) => r.error).filter(Boolean);
+
+  return {
+    count:      allRows.length,
+    rows:       allRows,
+    configured: true,
+    errors,
+  };
 }
 
 /**
