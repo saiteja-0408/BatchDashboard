@@ -223,7 +223,20 @@ export function VerificationModal({ open, onClose, onSent }) {
               <Alert
                 severity="error"
                 role="alert"
-                sx={{ mb: 2, fontSize: '0.83rem' }}
+                sx={{ mb: 2, fontSize: '0.83rem', alignItems: 'center' }}
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    variant="outlined"
+                    onClick={handleOpenPreview}
+                    disabled={isPreviewLoading}
+                    startIcon={<VisibilityIcon fontSize="small" />}
+                    sx={{ textTransform: 'none', fontWeight: 600, ml: 1, whiteSpace: 'nowrap' }}
+                  >
+                    Open in Outlook / Preview
+                  </Button>
+                }
               >
                 {submitError}
               </Alert>
