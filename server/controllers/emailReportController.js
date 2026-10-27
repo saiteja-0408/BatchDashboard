@@ -382,52 +382,56 @@ async function getAutoChecks(req, res) {
       value: weeklyCert.configured ? (weeklyCert.count >= 1 ? 'yes' : 'no') : 'yes',
       comment: '',
     },
-    // Batch Monitoring
+    // Batch Monitoring — no pre-selection when query not configured.
     'batch-monitoring-execution': {
-      value: monitoringExecution.configured ? (monitoringExecution.count >= 1 ? 'yes' : 'no') : 'yes',
+      value: monitoringExecution.configured ? (monitoringExecution.count >= 1 ? 'yes' : 'no') : '',
       comment: '',
     },
     'batch-hung': {
-      value: hungBatch.configured ? (hungBatch.count >= 1 ? 'yes' : 'no') : 'no',
+      value: hungBatch.configured ? (hungBatch.count >= 1 ? 'yes' : 'no') : '',
       comment: '',
     },
     'batch-failed': {
-      value: failedBatches.configured ? (failedBatches.count >= 1 ? 'yes' : 'no') : 'yes',
+      value: failedBatches.configured ? (failedBatches.count >= 1 ? 'yes' : 'no') : '',
       comment: failedBatches.rows && failedBatches.rows.length > 0
         ? failedBatches.rows.map((r) => r.JOB_NAME || r.job_name || r.name || JSON.stringify(r)).join('\n')
-        : 'BatchValidateBulkFile: https://reemployusa2022.atlassian.net/browse/CMP-207\nBatchPostBulkTaxReportsPayments: https://reemployusa2022.atlassian.net/browse/CMP-210',
+        : '',
     },
+    // YES = temp tables are empty (no data = clean).
+    // NO  = data found in one or more temp tables (create a defect).
     'batch-correspondence-temp-clean': {
-      value: correspondenceClean.configured ? (correspondenceClean.count >= 1 ? 'yes' : 'no') : 'yes',
-      comment: '',
+      value: correspondenceClean.configured ? (correspondenceClean.count >= 1 ? 'no' : 'yes') : 'yes',
+      comment: correspondenceClean.configured && correspondenceClean.count >= 1
+        ? 'Data found in temp tables — create a defect.'
+        : '',
     },
-    // Application Monitoring defaults
-    'app-claimant-login': { value: 'yes', comment: '' },
-    'app-employer-login': { value: 'yes', comment: '' },
-    'app-internal-user-login': { value: 'yes', comment: '' },
-    'app-sso': { value: 'yes', comment: '' },
-    'app-my-q': { value: 'yes', comment: '' },
-    'app-claimant-inquiry': { value: 'yes', comment: '' },
-    'app-view-correspondence-claimant': { value: 'yes', comment: '' },
-    'app-employer-inquiry': { value: 'yes', comment: '' },
-    'app-view-correspondence-employer': { value: 'yes', comment: '' },
+    // Application Monitoring — no pre-selection; user must choose manually.
+    'app-claimant-login': { value: '', comment: '' },
+    'app-employer-login': { value: '', comment: '' },
+    'app-internal-user-login': { value: '', comment: '' },
+    'app-sso': { value: '', comment: '' },
+    'app-my-q': { value: '', comment: '' },
+    'app-claimant-inquiry': { value: '', comment: '' },
+    'app-view-correspondence-claimant': { value: '', comment: '' },
+    'app-employer-inquiry': { value: '', comment: '' },
+    'app-view-correspondence-employer': { value: '', comment: '' },
     'app-mobile-app-check': { value: 'na', comment: 'NOTE - This validation is no longer applicable and can be disregarded.' },
-    'app-chatbot-check': { value: 'yes', comment: '' },
+    'app-chatbot-check': { value: '', comment: '' },
     'app-failed-kafka-records': {
       // YES when the query finds unprocessed records today; NO otherwise.
-      // Falls back to the static YES + Jira link when the env var is not configured.
-      value:   failedKafka.configured ? (failedKafka.count >= 1 ? 'yes' : 'no') : 'yes',
+      // No pre-selection when the env var is not configured.
+      value:   failedKafka.configured ? (failedKafka.count >= 1 ? 'yes' : 'no') : '',
       comment: failedKafka.configured
         ? (failedKafka.count >= 1 ? 'https://reemployusa2022.atlassian.net/browse/CMP-133' : '')
-        : 'https://reemployusa2022.atlassian.net/browse/CMP-133',
+        : '',
     },
-    // RPA defaults
-    'rpa-ib6-incoming': { value: 'yes', comment: '' },
-    'rpa-work-item-assign': { value: 'yes', comment: '' },
-    'rpa-name-mismatch': { value: 'yes', comment: '' },
-    'rpa-incorrect-wage': { value: 'yes', comment: '' },
-    'rpa-process-employer-response': { value: 'yes', comment: '' },
-    'rpa-workitem-reassign': { value: 'yes', comment: '' },
+    // RPA — no pre-selection; user must choose manually.
+    'rpa-ib6-incoming': { value: '', comment: '' },
+    'rpa-work-item-assign': { value: '', comment: '' },
+    'rpa-name-mismatch': { value: '', comment: '' },
+    'rpa-incorrect-wage': { value: '', comment: '' },
+    'rpa-process-employer-response': { value: '', comment: '' },
+    'rpa-workitem-reassign': { value: '', comment: '' },
   };
 
   const emailConfig = getEmailConfig();

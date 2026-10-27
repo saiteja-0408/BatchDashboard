@@ -31,7 +31,11 @@ import { dispatchEmailReport, fetchAutoChecks, generateReportId } from '../servi
 function buildInitialAnswers(autoChecksMap = {}) {
   return VERIFICATION_QUESTIONS.map((q) => {
     const auto = autoChecksMap[q.id];
-    let initialValue = auto?.value ?? (q.id === 'app-mobile-app-check' ? 'na' : (q.id === 'batch-hung' ? 'no' : 'yes'));
+
+    // When the server supplies an auto-check value, use it.
+    // Otherwise leave the field blank (no pre-selection) so the user must
+    // consciously choose Yes/No — except for the N/A text-only item.
+    let initialValue   = auto?.value ?? (q.id === 'app-mobile-app-check' ? 'na' : '');
     let initialComment = auto?.comment ?? (q.id === 'app-mobile-app-check' ? 'NOTE - This validation is no longer applicable and can be disregarded.' : '');
 
     return {
