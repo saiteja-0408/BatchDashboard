@@ -361,6 +361,7 @@ async function getAutoChecks(req, res) {
     hungBatch,
     failedBatches,
     correspondenceClean,
+    failedKafka,
   ] = await Promise.all([
     executeCheckQuery('QUERY_DB_CLAIM_FILING'),
     executeCheckQuery('QUERY_DB_WEEKLY_CERT'),
@@ -368,6 +369,7 @@ async function getAutoChecks(req, res) {
     executeCheckQuery('QUERY_BATCH_HUNG'),
     executeCheckQuery('QUERY_BATCH_FAILED'),
     executeCheckQuery('QUERY_BATCH_CORRESPONDENCE_CLEAN'),
+    executeCheckQuery('QUERY_APP_FAILED_KAFKA_RECORDS'),
   ]);
 
   const autoChecks = {
@@ -411,7 +413,14 @@ async function getAutoChecks(req, res) {
     'app-view-correspondence-employer': { value: 'yes', comment: '' },
     'app-mobile-app-check': { value: 'na', comment: 'NOTE - This validation is no longer applicable and can be disregarded.' },
     'app-chatbot-check': { value: 'yes', comment: '' },
-    'app-failed-kafka-records': { value: 'yes', comment: 'https://reemployusa2022.atlassian.net/browse/CMP-133' },
+    'app-failed-kafka-records': {
+      // YES when the query finds unprocessed records today; NO otherwise.
+      // Falls back to the static YES + Jira link when the env var is not configured.
+      value:   failedKafka.configured ? (failedKafka.count >= 1 ? 'yes' : 'no') : 'yes',
+      comment: failedKafka.configured
+        ? (failedKafka.count >= 1 ? 'https://reemployusa2022.atlassian.net/browse/CMP-133' : '')
+        : 'https://reemployusa2022.atlassian.net/browse/CMP-133',
+    },
     // RPA defaults
     'rpa-ib6-incoming': { value: 'yes', comment: '' },
     'rpa-work-item-assign': { value: 'yes', comment: '' },
