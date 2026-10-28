@@ -29,6 +29,7 @@ import {
   Table, TableHead, TableBody, TableRow, TableCell,
   TableContainer, Paper, Skeleton, CircularProgress,
   TextField, InputAdornment, IconButton, TableSortLabel,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button as MuiButton,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon  from '@mui/icons-material/Clear';
@@ -294,6 +295,13 @@ export function StatusReportTab({ enabled }) {
     isError,
     error,
   } = useStatusReport(enabled);
+
+  // ── Cell-expand dialog state ───────────────────────────────────────────────
+  const [expandedCell, setExpandedCell] = useState(null); // { label, value } | null
+  const handleCellClick = useCallback((label, value) => {
+    if (value && value !== '—') setExpandedCell({ label, value });
+  }, []);
+  const handleCellClose = useCallback(() => setExpandedCell(null), []);
 
   // ── Local search state ────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('');
@@ -650,41 +658,57 @@ export function StatusReportTab({ enabled }) {
                       },
                     }}
                   >
-                    {COLUMNS.map((col) => (
-                      <TableCell
-                        key={col.id}
-                        sx={{
-                          fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
-                          py:         { xs: 0.75, xl: 1 },
-                          whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
-                            ? 'normal'
-                            : 'nowrap',
-                          wordBreak:    col.id === 'job_name' || col.id === 'parent_job_name'
-                            ? 'break-word'
-                            : 'normal',
-                          overflow:     'hidden',
-                          textOverflow: 'ellipsis',
-                          maxWidth: col.id === 'job_name'
-                            ? { xs: 180, md: 220, xl: 320 }
-                            : col.id === 'job_group' || col.id === 'parent_job_group'
-                              ? { xs: 140, md: 180, xl: 240 }
-                              : 'none',
-                        }}
-                      >
-                        {col.id === 'row_num' ? (
-                          <Typography
-                            variant="caption"
-                            sx={{ fontWeight: 600, color: 'text.secondary', fontFamily: 'monospace' }}
-                          >
-                            {totalCount - (startIndex + idx)}
-                          </Typography>
-                        ) : col.id === '_status' ? (
-                          <StatusChip row={row} />
-                        ) : (
-                          formatCell(row[col.id], col.id)
-                        )}
-                      </TableCell>
-                    ))}
+                    {COLUMNS.map((col) => {
+                      const isExpandable = col.id !== 'row_num' && col.id !== '_status';
+                      const cellDisplayValue = col.id === 'row_num'
+                        ? null
+                        : col.id === '_status'
+                          ? null
+                          : formatCell(row[col.id], col.id);
+                      return (
+                        <TableCell
+                          key={col.id}
+                          onClick={
+                            isExpandable && cellDisplayValue && cellDisplayValue !== '—'
+                              ? () => handleCellClick(col.label, cellDisplayValue)
+                              : undefined
+                          }
+                          sx={{
+                            fontSize:   { xs: '0.75rem', md: '0.78rem', xl: '0.83rem' },
+                            py:         { xs: 0.75, xl: 1 },
+                            whiteSpace:   col.id === 'job_name' || col.id === 'parent_job_name'
+                              ? 'normal'
+                              : 'nowrap',
+                            wordBreak:    col.id === 'job_name' || col.id === 'parent_job_name'
+                              ? 'break-word'
+                              : 'normal',
+                            overflow:     'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: col.id === 'job_name'
+                              ? { xs: 180, md: 220, xl: 320 }
+                              : col.id === 'job_group' || col.id === 'parent_job_group'
+                                ? { xs: 140, md: 180, xl: 240 }
+                                : 'none',
+                            cursor: isExpandable && cellDisplayValue && cellDisplayValue !== '—'
+                              ? 'pointer'
+                              : 'default',
+                          }}
+                        >
+                          {col.id === 'row_num' ? (
+                            <Typography
+                              variant="caption"
+                              sx={{ fontWeight: 600, color: 'text.secondary', fontFamily: 'monospace' }}
+                            >
+                              {totalCount - (startIndex + idx)}
+                            </Typography>
+                          ) : col.id === '_status' ? (
+                            <StatusChip row={row} />
+                          ) : (
+                            cellDisplayValue
+                          )}
+                        </TableCell>
+                      );
+                    })}
                   </TableRow>
                 );
               })}
@@ -698,6 +722,32 @@ export function StatusReportTab({ enabled }) {
           </Table>
         </TableContainer>
       )}
+      {/* ── Cell value expand dialog ── */}
+      <Dialog
+        open={Boolean(expandedCell)}
+        onClose={handleCellClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        {expandedCell && (
+          <>
+            <DialogTitle sx={{ fontSize: '0.95rem', fontWeight: 700, pb: 1 }}>
+              {expandedCell.label}
+            </DialogTitle>
+            <DialogContent>
+              <Typography
+                variant="body2"
+                sx={{ wordBreak: 'break-all', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}
+              >
+                {expandedCell.value}
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <MuiButton size="small" onClick={handleCellClose}>Close</MuiButton>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }
