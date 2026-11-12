@@ -7,14 +7,13 @@ import { TextField, InputAdornment, IconButton } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import { useBatchContext } from '../../context/BatchContext';
-
-const DEBOUNCE_MS = 350;
+import { DEBOUNCE_MS } from '../../utils/constants';
 
 export function SearchBar() {
   const { searchQuery, setSearchQuery } = useBatchContext();
   const [localValue, setLocalValue] = useState(searchQuery);
 
-  // Sync local input with context (e.g., when clearAllFilters is called)
+  // Sync local input with context (e.g., when tab changes and search is cleared)
   useEffect(() => { setLocalValue(searchQuery); }, [searchQuery]);
 
   // Debounce: only push to context after user stops typing
@@ -27,7 +26,7 @@ export function SearchBar() {
     <TextField
       fullWidth
       size="small"
-      placeholder="Search batches — name, ID, team, command…"
+      placeholder="Search by batch name, schedule group, or arguments…"
       value={localValue}
       onChange={(e) => setLocalValue(e.target.value)}
       InputProps={{

@@ -4,24 +4,32 @@
   "description": "Centralized batch job monitoring dashboard — replaces Excel-based manual tracking",
   "main": "server/app.js",
   "scripts": {
-    "start": "node server/app.js",
-    "dev:server": "nodemon server/app.js",
-    "dev:client": "cd client && npm run dev",
+    "start": "cross-env NODE_ENV=production node server/app.js",
+    "dev:server": "cross-env nodemon --watch .env --watch server server/app.js",
+    "dev:client": "npm --prefix client run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "build:client": "cd client && npm run build",
-    "generate-sample": "node data/generateSample.js",
-    "install:all": "npm install && cd client && npm install"
+    "build:client": "npm --prefix client run build",
+    "generate-sample": "node scripts/generateTestData.js",
+    "install:all": "npm install && npm --prefix client install",
+    "test": "cross-env NODE_ENV=test jest tests/"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "nodemailer": "^10.1.7",
+    "pg": "^8.23.0",
+    "ssh2": "^1.16.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "nodemon": "^3.1.4"
+    "cross-env": "^7.0.3",
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.4",
+    "supertest": "^7.3.0"
   },
   "engines": {
     "node": ">=18.0.0"

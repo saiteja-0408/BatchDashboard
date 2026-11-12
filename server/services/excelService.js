@@ -1,31 +1,102 @@
 /**
  * excelService.js — in-memory batch data store + reload logic.
  *
- * Acts as the data-access layer between the file parser and the controller.
- * Holds the parsed batch list in memory so API requests don't re-read the file
- * on every call. Call loadFromFile() to refresh the store (startup or after upload).
+ * The store holds batches from both sheets (Benefits + Tax).
+ * batchName is used as the unique key within a sheet.
+ * sheetSource ('benefits' | 'tax') is used for sheet-level filtering.
+ *
+ * Three load entry-points:
+ *   loadFromFiles(benefitsPath, taxPath) — used at server startup,
+ *     reads both dedicated files and merges them into one store.
+ *   loadFromFile(filePath) — kept for tests; loads a single file
+ *     (which may contain both sheets) and replaces the store.
+ *   reloadSheet(sheetSource, buffer) — hot-replaces one sheet's slice
+ *     in the store from an in-memory Buffer (used by the upload endpoint).
  */
 
-const { parseExcelFile } = require('../utils/fileParser');
+const fs = require('fs');
+const path = require('path');
+const { parseExcelFile, parseExcelBuffer } = require('../utils/fileParser');
 const { createBatch, validateBatch } = require('../models/batchModel');
-const { ACTIVE_STATUSES } = require('../config/constants');
+
+const VALID_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb', '.csv'];
 
 /**
- * In-memory store. Mutated only by loadFromFile().
+ * In-memory store and file tracking.
  * @type {import('../models/batchModel').BatchModel[]}
  */
 let _store = [];
+let _benefitsPath = null;
+let _taxPath = null;
+let _fileMtimes = {
+  benefits: 0,
+  tax: 0,
+};
 
 /**
- * Parses the given Excel file and replaces the in-memory store.
- * Logs all warnings and validation issues to the server console.
+ * Resolves configured or default file path for a given sheet ('benefits' | 'tax').
+ * Uses cross-platform path.resolve and path.join.
+ * Finds the latest uploaded sheet file across all supported formats (.xlsx, .csv, .xls, .xlsm, .xlsb).
  *
- * @param {string} filePath - Absolute path to the .xlsx file
- * @returns {Promise<{ count: number, warnings: string[] }>}
+ * @param {'benefits'|'tax'} sheetSource
+ * @returns {string}
  */
-async function loadFromFile(filePath) {
-  // parseExcelFile is async (ExcelJS uses async file I/O)
-  const { rows, warnings } = await parseExcelFile(filePath);
+function getTargetFilePath(sheetSource) {
+  const normSheet = String(sheetSource).toLowerCase().trim();
+
+  if (normSheet === 'benefits') {
+    if (process.env.BENEFITS_EXCEL_PATH) return path.resolve(process.env.BENEFITS_EXCEL_PATH);
+    if (_benefitsPath && fs.existsSync(_benefitsPath)) return _benefitsPath;
+  } else if (normSheet === 'tax') {
+    if (process.env.TAX_EXCEL_PATH) return path.resolve(process.env.TAX_EXCEL_PATH);
+    if (_taxPath && fs.existsSync(_taxPath)) return _taxPath;
+  }
+
+  const dataDir = path.resolve(process.env.DATA_DIR || './data');
+
+  // Search for existing file for this sheetSource with any supported extension
+  let newestFile = null;
+  let newestMtime = -1;
+
+  for (const ext of VALID_EXTENSIONS) {
+    const candidate = path.join(dataDir, `${normSheet}${ext}`);
+    if (fs.existsSync(candidate)) {
+      try {
+        const mtime = fs.statSync(candidate).mtimeMs;
+        if (mtime > newestMtime) {
+          newestMtime = mtime;
+          newestFile = candidate;
+        }
+      } catch {
+        if (!newestFile) newestFile = candidate;
+      }
+    }
+  }
+
+  if (newestFile) {
+    return newestFile;
+  }
+
+  return path.join(dataDir, `${normSheet}.xlsx`);
+}
+
+/**
+ * Checks if on-disk file has been replaced/updated since last load and reloads it automatically.
+ * Ensures swapping benefits.xlsx or tax.xlsx immediately reflects in all read operations.
+ * @param {'benefits'|'tax'} [sheetSource]
+ */
+// Helper for syncing modified files is handled asynchronously in syncFromDisk
+
+/**
+ * Internal helper: parses one file, validates rows, and returns a BatchModel[].
+ * Does NOT mutate _store.
+ *
+ * @param {string} filePath
+ * @param {'benefits'|'tax'|null} [defaultSheetSource=null]
+ * @returns {Promise<{ batches: import('../models/batchModel').BatchModel[], warnings: string[] }>}
+ */
+async function _parseToBatches(filePath, defaultSheetSource = null) {
+  const { rows, warnings } = await parseExcelFile(filePath, defaultSheetSource);
 
   if (warnings.length > 0) {
     warnings.forEach((w) => console.warn(`[excelService] WARNING: ${w}`));
@@ -34,60 +105,196 @@ async function loadFromFile(filePath) {
   const batches = [];
   for (const row of rows) {
     const batch = createBatch(row);
-    const batchWarnings = validateBatch(batch);
-    batchWarnings.forEach((w) => console.warn(`[excelService] VALIDATION: ${w}`));
-    if (batch.batchId) batches.push(batch); // only store rows with an ID
+    if (batch.batchName) batches.push(batch);
   }
 
+  return { batches, warnings };
+}
+
+/**
+ * Loads Benefits and Tax data from two separate Excel files and merges them
+ * into the in-memory store. This is the primary entry-point used at server startup.
+ *
+ * @param {string} benefitsPath - Absolute path to benefits.xlsx
+ * @param {string} taxPath      - Absolute path to tax.xlsx
+ * @returns {Promise<{ count: number, warnings: string[] }>}
+ */
+async function loadFromFiles(benefitsPath, taxPath) {
+  _benefitsPath = benefitsPath ? path.resolve(benefitsPath) : getTargetFilePath('benefits');
+  _taxPath      = taxPath ? path.resolve(taxPath) : getTargetFilePath('tax');
+
+  const allWarnings = [];
+
+  const [benefitsResult, taxResult] = await Promise.all([
+    _parseToBatches(_benefitsPath, 'benefits').catch((err) => {
+      allWarnings.push(`benefits.xlsx: ${err.message}`);
+      return { batches: [], warnings: [] };
+    }),
+    _parseToBatches(_taxPath, 'tax').catch((err) => {
+      allWarnings.push(`tax.xlsx: ${err.message}`);
+      return { batches: [], warnings: [] };
+    }),
+  ]);
+
+  allWarnings.push(...benefitsResult.warnings, ...taxResult.warnings);
+
+  _store = [...benefitsResult.batches, ...taxResult.batches];
+
+  try {
+    if (fs.existsSync(_benefitsPath)) _fileMtimes.benefits = fs.statSync(_benefitsPath).mtimeMs;
+    if (fs.existsSync(_taxPath))      _fileMtimes.tax      = fs.statSync(_taxPath).mtimeMs;
+  } catch {
+    // Ignore stat failures
+  }
+
+  const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
+  const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
+  console.log(`[excelService] Store loaded: ${_store.length} batch(es) — ${bCount} Benefits, ${tCount} Tax.`);
+  return { count: _store.length, warnings: allWarnings };
+}
+
+/**
+ * Checks if on-disk files have changed and hot-syncs them into the store before serving requests.
+ * @param {'benefits'|'tax'} [sheetSource]
+ */
+async function syncFromDisk(sheetSource) {
+  // If in test environment or custom fixture mode where single file was loaded, do not override store
+  if (process.env.NODE_ENV === 'test' && !_benefitsPath) {
+    return;
+  }
+
+  const sources = sheetSource ? [sheetSource] : ['benefits', 'tax'];
+  for (const src of sources) {
+    const filePath = getTargetFilePath(src);
+    try {
+      if (fs.existsSync(filePath)) {
+        const mtime = fs.statSync(filePath).mtimeMs;
+        if (mtime > (_fileMtimes[src] || 0)) {
+          const { batches } = await _parseToBatches(filePath, src);
+          if (batches.length > 0) {
+            _store = [
+              ..._store.filter((b) => (b.sheetSource || '').toLowerCase().trim() !== src),
+              ...batches,
+            ];
+            _fileMtimes[src] = mtime;
+            console.log(`[excelService] Hot-reloaded modified file for "${src}" from ${filePath} (${batches.length} rows).`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[excelService] Failed to hot-reload ${src}: ${e.message}`);
+    }
+  }
+}
+
+/**
+ * Parses a single Excel file and replaces the in-memory store.
+ * Kept for use in tests (which load data/batches.xlsx as a fixture).
+ *
+ * @param {string} filePath - Absolute path to the .xlsx file
+ * @returns {Promise<{ count: number, warnings: string[] }>}
+ */
+async function loadFromFile(filePath) {
+  const { batches, warnings } = await _parseToBatches(filePath);
+
   _store = batches;
-  console.log(`[excelService] Store loaded: ${_store.length} batch(es).`);
+  _benefitsPath = null;
+  _taxPath = null;
+  _fileMtimes = { benefits: Infinity, tax: Infinity };
+  const bCount = _store.filter((b) => b.sheetSource === 'benefits').length;
+  const tCount = _store.filter((b) => b.sheetSource === 'tax').length;
+  console.log(`[excelService] Store loaded: ${_store.length} batch(es) — ${bCount} Benefits, ${tCount} Tax.`);
   return { count: _store.length, warnings };
 }
 
 /**
  * Returns a shallow copy of the in-memory store.
+ * Optionally filtered by sheetSource.
+ * @param {'benefits'|'tax'|undefined} sheetSource
  * @returns {import('../models/batchModel').BatchModel[]}
  */
-function getAll() {
+function getAll(sheetSource) {
+  if (sheetSource) {
+    const src = String(sheetSource).toLowerCase().trim();
+    return _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === src);
+  }
   return [..._store];
 }
 
 /**
- * Finds a single batch by its batchId.
- * @param {string} id
+ * Finds a single batch by batchName within an optional sheet.
+ * batchName is URL-encoded in the route; decode before comparing.
+ * @param {string} name
+ * @param {string|undefined} sheetSource
  * @returns {import('../models/batchModel').BatchModel | undefined}
  */
-function getById(id) {
-  return _store.find((b) => b.batchId === id);
-}
-
-/**
- * Full-text search across all string fields.
- * Case-insensitive substring match.
- * @param {string} query
- * @returns {import('../models/batchModel').BatchModel[]}
- */
-function search(query) {
-  const q = query.toLowerCase();
-  return _store.filter((b) =>
-    Object.values(b).some(
-      (v) => typeof v === 'string' && v.toLowerCase().includes(q)
-    )
+function getByName(name, sheetSource) {
+  const src = sheetSource ? String(sheetSource).toLowerCase().trim() : null;
+  return _store.find((b) =>
+    b.batchName === name &&
+    (!src || (b.sheetSource || '').toLowerCase().trim() === src)
   );
 }
 
 /**
- * Filters the store by optional domain, frequency, and status criteria.
- * All provided filters are applied as AND conditions.
- *
- * @param {{ domain?: string, frequency?: string, status?: string }} filters
+ * Full-text search across batchName, scheduleName, arguments, and triggerNeeded.
+ * Guards all fields with (|| '') so null/undefined values never cause a
+ * TypeError crash when the store is populated from a non-createBatch path.
+ * @param {string} query
+ * @param {string|undefined} sheetSource
+ * @returns {import('../models/batchModel').BatchModel[]}
+ */
+function search(query, sheetSource) {
+  const q = query.toLowerCase().trim();
+  const src = sheetSource ? String(sheetSource).toLowerCase().trim() : null;
+  const pool = src
+    ? _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === src)
+    : _store;
+
+  if (!q) return [...pool];
+
+  const matches = [];
+  for (const b of pool) {
+    const bName = (b.batchName || '').toLowerCase();
+    const sName = (b.scheduleName || '').toLowerCase();
+    const args  = (b.arguments || '').toLowerCase();
+    const trig  = (b.triggerNeeded || '').toLowerCase();
+
+    let score = 0;
+    if (bName === q) {
+      score = 100;
+    } else if (bName.startsWith(q)) {
+      score = 80;
+    } else if (bName.includes(q)) {
+      score = 60;
+    } else if (sName.startsWith(q)) {
+      score = 40;
+    } else if (sName.includes(q)) {
+      score = 30;
+    } else if (args.includes(q)) {
+      score = 20;
+    } else if (trig.includes(q)) {
+      score = 10;
+    }
+
+    if (score > 0) {
+      matches.push({ batch: b, score });
+    }
+  }
+
+  matches.sort((a, b) => b.score - a.score);
+  return matches.map((m) => m.batch);
+}
+
+/**
+ * Filters the store by sheetSource.
+ * @param {{ sheetSource?: string }} filters
  * @returns {import('../models/batchModel').BatchModel[]}
  */
 function filter(filters) {
+  const src = filters.sheetSource ? String(filters.sheetSource).toLowerCase().trim() : null;
   return _store.filter((b) => {
-    if (filters.domain    && b.domain.toLowerCase()        !== filters.domain.toLowerCase())    return false;
-    if (filters.frequency && b.frequency.toLowerCase()     !== filters.frequency.toLowerCase()) return false;
-    if (filters.status    && b.lastRunStatus.toLowerCase() !== filters.status.toLowerCase())    return false;
+    if (src && (b.sheetSource || '').toLowerCase().trim() !== src) return false;
     return true;
   });
 }
@@ -97,32 +304,150 @@ function filter(filters) {
  * @returns {Object}
  */
 function getSummary() {
-  const total = _store.length;
-  const active = _store.filter((b) => b.isActive).length;
-  const inactive = total - active;
+  const total    = _store.length;
+  const benefits = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'benefits').length;
+  const tax      = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'tax').length;
 
-  const byDomain = _store.reduce((acc, b) => {
-    acc[b.domain] = (acc[b.domain] || 0) + 1;
-    return acc;
-  }, {});
+  const bySheet = { Benefits: benefits, Tax: tax };
 
-  const byStatus = _store.reduce((acc, b) => {
-    acc[b.lastRunStatus] = (acc[b.lastRunStatus] || 0) + 1;
-    return acc;
-  }, {});
-
-  // "Running today" = lastRunStatus is Running or lastRunTime is today's date
-  const today = new Date().toDateString();
-  const runningToday = _store.filter((b) => {
-    if (b.lastRunStatus === 'Running') return true;
-    if (!b.lastRunTime) return false;
-    try { return new Date(b.lastRunTime).toDateString() === today; }
-    catch { return false; }
-  }).length;
-
-  const failed = _store.filter((b) => b.lastRunStatus === 'Failed').length;
-
-  return { total, active, inactive, byDomain, byStatus, runningToday, failed };
+  return { total, benefits, tax, invalid: 0, bySheet };
 }
 
-module.exports = { loadFromFile, getAll, getById, search, filter, getSummary };
+/**
+ * Hot-replaces a single sheet's records in the in-memory store from a Buffer.
+ * Used by the POST /api/batches/upload endpoint when a user uploads a new file.
+ *
+ * The uploaded file must contain at least one sheet whose name matches the
+ * given sheetSource ('benefits' → sheet name contains "benefit",
+ * 'tax' → sheet name contains "tax").
+ *
+ * After a successful reload the in-memory store for the given sheet is replaced
+ * atomically; the other sheet is left untouched.
+ *
+ * @param {'benefits'|'tax'} sheetSource
+ * @param {Buffer} buffer - raw .xlsx/.xls file contents
+ * @returns {Promise<{ count: number, warnings: string[], batches: import('../models/batchModel').BatchModel[] }>}
+ */
+async function reloadSheet(sheetSource, buffer, originalName = null) {
+  const normSheet = String(sheetSource).toLowerCase().trim();
+  const { batches, warnings } = await _parseToBatchesFromBuffer(buffer, normSheet);
+
+  // Ensure all incoming batches belong to the requested sheetSource and have the right logDir
+  const incoming = batches.map((b) => ({
+    ...b,
+    sheetSource: normSheet,
+    logDir: b.logDir || (normSheet === 'tax' ? 'cd /opt/app/accessms/bin/tax/batch/' : 'cd /opt/app/accessms/bin/benefits/batch'),
+  }));
+
+  if (incoming.length === 0) {
+    const err = new Error(
+      `Uploaded file contains no valid batch rows for the "${normSheet}" sheet. ` +
+      'Make sure the first sheet contains valid data rows with batch job entries.'
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  // Atomically replace only the target sheet's rows; preserve the other sheet
+  _store = [
+    ..._store.filter((b) => (b.sheetSource || '').toLowerCase().trim() !== normSheet),
+    ...incoming,
+  ];
+
+  // Determine target extension
+  let ext = '.xlsx';
+  if (originalName) {
+    const originalExt = path.extname(originalName).toLowerCase();
+    if (VALID_EXTENSIONS.includes(originalExt)) {
+      ext = originalExt;
+    }
+  }
+
+  // Persist uploaded buffer to configured target Excel/CSV file on disk (skip disk file replacement in test fixtures)
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const dataDir = path.resolve(process.env.DATA_DIR || './data');
+      let targetFile;
+      if (normSheet === 'benefits') {
+        targetFile = process.env.BENEFITS_EXCEL_PATH
+          ? path.resolve(process.env.BENEFITS_EXCEL_PATH)
+          : path.join(dataDir, `benefits${ext}`);
+      } else if (normSheet === 'tax') {
+        targetFile = process.env.TAX_EXCEL_PATH
+          ? path.resolve(process.env.TAX_EXCEL_PATH)
+          : path.join(dataDir, `tax${ext}`);
+      } else {
+        targetFile = path.join(dataDir, `${normSheet}${ext}`);
+      }
+
+      const targetDir = path.dirname(targetFile);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      // Clean up any alternate extension files for this sheet so only the latest sheet exists on disk
+      if (!process.env[`${normSheet.toUpperCase()}_EXCEL_PATH`]) {
+        for (const otherExt of VALID_EXTENSIONS) {
+          if (otherExt !== ext) {
+            const oldFile = path.join(dataDir, `${normSheet}${otherExt}`);
+            if (fs.existsSync(oldFile)) {
+              try {
+                fs.unlinkSync(oldFile);
+                console.log(`[excelService] Cleaned up alternate stale sheet file: ${oldFile}`);
+              } catch (unlinkErr) {
+                console.warn(`[excelService] Failed to clean up alternate file ${oldFile}: ${unlinkErr.message}`);
+              }
+            }
+          }
+        }
+      }
+
+      fs.writeFileSync(targetFile, buffer);
+      if (fs.existsSync(targetFile)) {
+        _fileMtimes[normSheet] = fs.statSync(targetFile).mtimeMs;
+        // Track updated path in _benefitsPath / _taxPath as well
+        if (normSheet === 'benefits') {
+          _benefitsPath = targetFile;
+        } else if (normSheet === 'tax') {
+          _taxPath = targetFile;
+        }
+      }
+    } catch (fsErr) {
+      console.warn(`[excelService] Warning: Could not persist uploaded sheet to disk: ${fsErr.message}`);
+    }
+  }
+
+  const bCount = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'benefits').length;
+  const tCount = _store.filter((b) => (b.sheetSource || '').toLowerCase().trim() === 'tax').length;
+  console.log(
+    `[excelService] Reloaded "${normSheet}" sheet from upload: ` +
+    `${incoming.length} row(s). Store now: ${_store.length} total ` +
+    `(${bCount} Benefits, ${tCount} Tax).`
+  );
+  return { count: incoming.length, warnings, batches: incoming };
+}
+
+/**
+ * Internal helper: parses a raw Buffer (instead of a file path), validates
+ * rows, and returns a BatchModel[]. Does NOT mutate _store.
+ *
+ * @param {Buffer} buffer
+ * @returns {Promise<{ batches: import('../models/batchModel').BatchModel[], warnings: string[] }>}
+ */
+async function _parseToBatchesFromBuffer(buffer, defaultSheetSource) {
+  const { rows, warnings } = await parseExcelBuffer(buffer, defaultSheetSource);
+
+  if (warnings.length > 0) {
+    warnings.forEach((w) => console.warn(`[excelService] WARNING: ${w}`));
+  }
+
+  const batches = [];
+  for (const row of rows) {
+    const batch = createBatch(row);
+    if (batch.batchName) batches.push(batch);
+  }
+
+  return { batches, warnings };
+}
+
+module.exports = { loadFromFiles, loadFromFile, reloadSheet, getAll, getByName, search, filter, getSummary, syncFromDisk, getTargetFilePath };

@@ -2,49 +2,57 @@
  * batchRoutes.js — Express Router wiring all batch endpoints.
  *
  * Route order matters:
- *   /batches/summary, /batches/search, /batches/filter must be declared
- *   BEFORE /batches/:id to prevent Express matching "summary" as an :id param.
+ *   /batches/summary, /batches/search, /batches/filter, /batches/upload must
+ *   be declared BEFORE /batches/:name to prevent Express matching those literal
+ *   segments as an :name param.
  */
 
-const express = require('express');
-const path = require('path');
-const multer = require('multer');
+'use strict';
 
-const controller = require('../controllers/batchController');
-const { asyncWrapper } = require('../middlewares/errorHandler');
+const express = require('express');
+const multer  = require('multer');
+
+const controller             = require('../controllers/batchController');
+const uploadController       = require('../controllers/uploadController');
+const currentTasksController = require('../controllers/currentTasksController');
+const statusReportController = require('../controllers/statusReportController');
+const runCommandController   = require('../controllers/runCommandController');
+const emailReportController  = require('../controllers/emailReportController');
+const { asyncWrapper }       = require('../middlewares/errorHandler');
+
+const os = require('os');
+const path = require('path');
+
+// Multer memory storage with platform-safe memory buffer handling
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 50 * 1024 * 1024 }, // 50 MB max for universal file support
+});
 
 const router = express.Router();
 
-// ── Multer: store uploaded files in UPLOAD_DIR with original extension ────────
-const uploadDir = path.resolve(process.env.UPLOAD_DIR || './data/uploads');
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const ts = Date.now();
-    cb(null, `upload_${ts}_${file.originalname}`);
-  },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const allowed = ['.xlsx', '.xls'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (!allowed.includes(ext)) {
-      return cb(new Error('Only .xlsx and .xls files are allowed.'));
-    }
-    cb(null, true);
-  },
-});
-
 // ── Batch routes ──────────────────────────────────────────────────────────────
-router.get('/batches',             asyncWrapper(controller.getAllBatches));
-router.get('/batches/summary',     asyncWrapper(controller.getSummary));
-router.get('/batches/search',      asyncWrapper(controller.searchBatches));
-router.get('/batches/filter',      asyncWrapper(controller.filterBatches));
-router.get('/batches/:id',         asyncWrapper(controller.getBatchById));
+router.get('/batches',                 asyncWrapper(controller.getAllBatches));
+router.get('/batches/summary',         asyncWrapper(controller.getSummary));
+router.get('/batches/search',          asyncWrapper(controller.searchBatches));
+router.get('/batches/filter',          asyncWrapper(controller.filterBatches));
+router.get('/batches/status',          asyncWrapper(controller.getStoreStatus));
+// Upload must be before /:name to avoid ambiguous route matching
+router.post('/batches/upload/:sheet',  upload.single('file'), asyncWrapper(uploadController.uploadSheet));
+router.get('/batches/:name/logs',       asyncWrapper(controller.getBatchLogs));
+router.get('/batches/:name/error-logs', asyncWrapper(controller.getBatchErrorLogs));
+router.get('/batches/:name',            asyncWrapper(controller.getBatchByName));
 
-// ── File upload ───────────────────────────────────────────────────────────────
-router.post('/upload', upload.single('file'), asyncWrapper(controller.uploadExcel));
+// ── Run Command route (SSH execution — feature-gated via ENABLE_SSH_RUN_COMMAND) ──
+router.post('/batch/run-command', asyncWrapper(runCommandController.runCommand));
+
+// ── Current-tasks route ───────────────────────────────────────────────────────
+router.get('/current-tasks',   asyncWrapper(currentTasksController.getCurrentTasks));
+
+// ── Status report routes ──────────────────────────────────────────────────────
+router.get('/status-report',                     asyncWrapper(statusReportController.getStatusReport));
+router.get('/status-report/email/auto-checks',   asyncWrapper(emailReportController.getAutoChecks));
+router.post('/status-report/email/preview',      asyncWrapper(emailReportController.previewEmailReport));
+router.post('/status-report/email',              asyncWrapper(emailReportController.sendEmailReport));
 
 module.exports = router;

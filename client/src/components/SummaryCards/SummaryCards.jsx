@@ -1,136 +1,97 @@
 /**
- * SummaryCards.jsx — dashboard summary section with stat cards and domain/status charts.
+ * SummaryCards.jsx — dashboard summary section.
+ * Shows total, by-sheet counts, and invalid schedule count as stat cards.
+ * Pie charts removed for a cleaner, faster layout.
  */
 
 import React from 'react';
-import PropTypes from 'prop-types';
 import {
-  Grid, Card, CardContent, Typography, Box, Skeleton, Chip,
+  Grid, Card, CardContent, Typography, Skeleton, Alert,
 } from '@mui/material';
-import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts';
 import { useSummary } from '../../hooks/useBatches';
 
-const COLORS = ['#1976d2', '#7c5cd8', '#2e7d32', '#ed6c02', '#d32f2f'];
-
-function StatCard({ label, value, color }) {
+/**
+ * Memoised stat card — scales from compact mobile to large 4K cards.
+ * On xl+ screens the number uses a larger fluid font to fill the extra space.
+ */
+const StatCard = React.memo(function StatCard({ label, value, color }) {
   return (
-    <Card elevation={2} sx={{ height: '100%' }}>
-      <CardContent>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
+    // elevation={0} → single thin border from theme (no drop-shadow doubling)
+    <Card elevation={0} sx={{ height: '100%' }}>
+      <CardContent
+        sx={{
+          p: { xs: 1.5, sm: 2, lg: 2.5 },
+          '&:last-child': { pb: { xs: 1.5, sm: 2, lg: 2.5 } },
+        }}
+      >
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          gutterBottom
+          noWrap
+          sx={{ fontSize: { xs: '0.75rem', lg: '0.85rem', xl: '0.9rem' } }}
+        >
           {label}
         </Typography>
-        <Typography variant="h4" fontWeight={700} color={color || 'text.primary'}>
+        <Typography
+          variant="h4"
+          fontWeight={700}
+          color={color || 'text.primary'}
+          sx={{
+            // Fluid: compact on phones, large on 1440p/4K
+            fontSize: { xs: '1.6rem', sm: '2rem', md: '2.125rem', xl: '2.5rem' },
+            lineHeight: 1.1,
+          }}
+        >
           {value}
         </Typography>
       </CardContent>
     </Card>
   );
-}
-
-StatCard.propTypes = {
-  label: PropTypes.string.isRequired,
-  value: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
-  color: PropTypes.string,
-};
-
-function DomainChart({ byDomain }) {
-  const data = Object.entries(byDomain || {}).map(([name, value]) => ({ name, value }));
-  if (!data.length) return null;
-  return (
-    <Card elevation={2} sx={{ height: '100%', minHeight: 200 }}>
-      <CardContent>
-        <Typography variant="subtitle2" gutterBottom fontWeight={700}>
-          By Domain
-        </Typography>
-        <ResponsiveContainer width="100%" height={160}>
-          <PieChart>
-            <Pie dataKey="value" data={data} cx="50%" cy="50%" outerRadius={60} label>
-              {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  );
-}
-
-DomainChart.propTypes = { byDomain: PropTypes.object };
-
-function StatusChart({ byStatus }) {
-  const data = Object.entries(byStatus || {}).map(([name, value]) => ({ name, value }));
-  if (!data.length) return null;
-  return (
-    <Card elevation={2} sx={{ height: '100%', minHeight: 200 }}>
-      <CardContent>
-        <Typography variant="subtitle2" gutterBottom fontWeight={700}>
-          By Status
-        </Typography>
-        <ResponsiveContainer width="100%" height={160}>
-          <PieChart>
-            <Pie dataKey="value" data={data} cx="50%" cy="50%" outerRadius={60} label>
-              {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  );
-}
-
-StatusChart.propTypes = { byStatus: PropTypes.object };
+});
 
 export function SummaryCards() {
   const { data: summary, isLoading, isError } = useSummary();
 
   if (isLoading) {
     return (
-      <Grid container spacing={2} mb={3}>
-        {[...Array(6)].map((_, i) => (
-          <Grid item xs={6} sm={4} md={2} key={i}>
-            <Skeleton variant="rectangular" height={100} sx={{ borderRadius: 2 }} />
+      <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
+        {[...Array(4)].map((_, i) => (
+          <Grid item xs={6} sm={4} md={3} key={i}>
+            <Skeleton variant="rectangular" height={90} sx={{ borderRadius: 2 }} />
           </Grid>
         ))}
       </Grid>
     );
   }
 
-  if (isError || !summary) return null;
+  if (isError || !summary) {
+    return (
+      <Alert severity="info" sx={{ mb: 2 }}>
+        No batch data loaded. Check that <strong>benefits.xlsx</strong> and{' '}
+        <strong>tax.xlsx</strong> are present in the <code>data/</code> directory.
+      </Alert>
+    );
+  }
 
   return (
-    <Grid container spacing={2} mb={3}>
-      <Grid item xs={6} sm={4} md={2}>
+    /*
+     * Grid breakpoints:
+     *   xs:  2 cards / row  (phones)
+     *   sm:  4 cards / row  (tablets → fills the row)
+     *   xl:  4 cards / row  (1440p — each card widens naturally via auto column width)
+     *
+     * spacing increases on lg+ so cards breathe on large screens.
+     */
+    <Grid container spacing={{ xs: 2, lg: 3 }} mb={{ xs: 3, lg: 4 }}>
+      <Grid item xs={12} sm={4}>
         <StatCard label="Total Batches"    value={summary.total} />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Active"           value={summary.active}   color="success.main" />
+      <Grid item xs={6} sm={4}>
+        <StatCard label="Benefits"         value={summary.benefits} color="primary.main" />
       </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Inactive"         value={summary.inactive} color="text.secondary" />
-      </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Running Today"    value={summary.runningToday} color="info.main" />
-      </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <StatCard label="Failed"           value={summary.failed}   color="error.main" />
-      </Grid>
-      <Grid item xs={6} sm={4} md={2}>
-        <Box display="flex" flexDirection="column" gap={1}>
-          {Object.entries(summary.byDomain || {}).map(([domain, count]) => (
-            <Chip key={domain} label={`${domain}: ${count}`} size="small" variant="outlined" />
-          ))}
-        </Box>
-      </Grid>
-      <Grid item xs={12} sm={6} md={4}>
-        <DomainChart byDomain={summary.byDomain} />
-      </Grid>
-      <Grid item xs={12} sm={6} md={4}>
-        <StatusChart byStatus={summary.byStatus} />
+      <Grid item xs={6} sm={4}>
+        <StatCard label="Tax"              value={summary.tax}      color="secondary.main" />
       </Grid>
     </Grid>
   );

@@ -27,54 +27,28 @@ export function formatDate(value) {
  * @returns {number}
  */
 export function compareValues(a, b, order = 'asc') {
-  // Treat nulls as smaller than everything
+  // Treat null / undefined / empty string as smaller than everything
+  if ((a === null || a === undefined || a === '') && (b === null || b === undefined || b === '')) return 0;
   if (a === null || a === undefined || a === '') return order === 'asc' ? 1 : -1;
   if (b === null || b === undefined || b === '') return order === 'asc' ? -1 : 1;
 
-  // Date comparison
-  const dateA = new Date(a);
-  const dateB = new Date(b);
-  if (!isNaN(dateA) && !isNaN(dateB)) {
-    return order === 'asc' ? dateA - dateB : dateB - dateA;
+  // Numeric comparison if both values are numbers (or numeric strings)
+  const numA = typeof a === 'number' ? a : (typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a)) ? Number(a) : NaN);
+  const numB = typeof b === 'number' ? b : (typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b)) ? Number(b) : NaN);
+  if (!isNaN(numA) && !isNaN(numB)) {
+    return order === 'asc' ? numA - numB : numB - numA;
   }
 
-  // String comparison
-  const sa = String(a).toLowerCase();
-  const sb = String(b).toLowerCase();
-  if (sa < sb) return order === 'asc' ? -1 : 1;
-  if (sa > sb) return order === 'asc' ? 1 : -1;
-  return 0;
-}
+  // Date comparison for Date objects or ISO/date formatted strings only
+  if (a instanceof Date && b instanceof Date) {
+    return order === 'asc' ? a.getTime() - b.getTime() : b.getTime() - a.getTime();
+  }
 
-/**
- * Exports an array of batch objects as a CSV file and triggers a browser download.
- * Uses no third-party library — generates a RFC 4180-compliant CSV via Blob.
- *
- * @param {Object[]} rows  - Array of batch objects
- * @param {string} filename - Output filename (without extension)
- */
-export function exportToExcel(rows, filename = 'batches_export') {
-  if (!rows || rows.length === 0) return;
-
-  const escape = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    // Wrap in quotes if value contains comma, newline, or double-quote
-    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-
-  const headers = Object.keys(rows[0]);
-  const csvRows = [
-    headers.join(','),
-    ...rows.map((row) => headers.map((h) => escape(row[h])).join(',')),
-  ];
-  const csvString = csvRows.join('\n');
-  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href     = url;
-  link.download = `${filename}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  // String natural / case-insensitive comparison
+  const sa = String(a);
+  const sb = String(b);
+  const comp = sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
+  return order === 'asc' ? comp : -comp;
 }
 
 /**
@@ -90,4 +64,117 @@ export async function copyToClipboard(text) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Helper to determine status string for a row.
+ *
+ * Priority evaluation order:
+ *   1. error_flag = 'Y' (case-insensitive)  → "Batch Failed"
+ *   2. biz_error_flag truthy                → "Biz Error"
+ *   3. Default / standard mapping           → "OK", explicit status string, or '—'
+ *
+ * @param {object} row
+ * @returns {string}
+ */
+export function getRowStatus(row) {
+  if (!row) return '—';
+
+  // ── Priority 1: error_flag = 'Y' → Batch Failed ──────────────────────────
+  const isFlagTrue = (val) => val === 'Y' || val === 'y' || val === '1' || val === 1 || val === true;
+  if (isFlagTrue(row.error_flag)) {
+    return 'Batch Failed';
+  }
+
+  // ── Priority 2: biz_error_flag truthy → Biz Error ────────────────────────
+  if (
+    isFlagTrue(row.biz_error_flag) ||
+    isFlagTrue(row.biz_error) ||
+    isFlagTrue(row.bizError) ||
+    isFlagTrue(row.business_error_flag)
+  ) {
+    return 'Biz Error';
+  }
+
+  // ── Priority 3: default / standard mapping ────────────────────────────────
+
+  // Check explicit status strings (with case-insensitive / variation support)
+  const explicitStatus = row.status ?? row._status;
+  if (typeof explicitStatus === 'string') {
+    const s = explicitStatus.trim().toLowerCase();
+    if (s === 'biz error' || s === 'biz_error' || s === 'business error' || s === 'business_error') {
+      return 'Biz Error';
+    }
+    if (s === 'batch failed' || s === 'batch_failed' || s === 'failed') {
+      return 'Batch Failed';
+    }
+    if (s === 'ok' || s === 'success' || s === 'complete' || s === 'completed') {
+      return 'OK';
+    }
+    if (explicitStatus.trim()) {
+      return explicitStatus.trim();
+    }
+  }
+
+  // Check error message / description fields indicating business error
+  const errorMsg = row.error_message || row.errorMessage || row.error || row.error_desc || row.errorDescription;
+  if (typeof errorMsg === 'string') {
+    const errLower = errorMsg.toLowerCase();
+    if (errLower.includes('biz error') || errLower.includes('business error') || errLower.includes('biz_error')) {
+      return 'Biz Error';
+    }
+  }
+
+  if (row.biz_error_flag === 'N' || row.biz_error_flag === 'n' || row.biz_error === 'N' || row.biz_error === 'n') {
+    return 'OK';
+  }
+
+  // Return the explicit status string only if it is a non-empty, non-flag value.
+  // Never propagate raw flag values ('N', 'Y', etc.) as display strings — they
+  // have already been handled by the priority checks above.
+  const rawStatus = row.status ?? row._status;
+  if (typeof rawStatus === 'string' && rawStatus.trim()) {
+    return rawStatus.trim();
+  }
+
+  return '—';
+}
+
+/**
+ * Sorts status report rows with the prioritized status ordering:
+ *   1. "Batch Failed" rows first (stable — original arrival order preserved)
+ *   2. "Biz Error" rows next (stable)
+ *   3. All remaining statuses in their original order
+ *
+ * Mode:
+ *   'priority_top' / 'biz_top' / 'biz_top_asc' : apply priority order
+ *   'priority_top_desc' / 'biz_top_desc'        : priority order, others reversed
+ *   'default'                                   : original order (unmodified)
+ *
+ * @param {Array<object>} rows
+ * @param {'default'|'priority_top'|'biz_top'|'biz_top_asc'|'priority_top_desc'|'biz_top_desc'} sortOrder
+ * @returns {Array<object>}
+ */
+export function sortStatusRows(rows, sortOrder) {
+  if (!rows || rows.length === 0 || !sortOrder || sortOrder === 'default') {
+    return rows;
+  }
+  const batchFailed = [];
+  const bizErrors   = [];
+  const others      = [];
+
+  rows.forEach((row) => {
+    const status = getRowStatus(row);
+    if (status === 'Batch Failed') {
+      batchFailed.push(row);
+    } else if (status === 'Biz Error') {
+      bizErrors.push(row);
+    } else {
+      others.push(row);
+    }
+  });
+
+  const isDesc = sortOrder === 'priority_top_desc' || sortOrder === 'biz_top_desc';
+  const tail = isDesc ? [...others].reverse() : others;
+  return [...batchFailed, ...bizErrors, ...tail];
 }
