@@ -126,7 +126,7 @@ export const SORTABLE_COLUMNS = [
  *
  * Format:
  *   <logDir>
- *   sudo ./qclient.sh <action> <batchName> <scheduleName> ["<arguments>"]
+ *   ./qclient.sh <action> <batchName> <scheduleName> ["<arguments>"]
  *
  * Arguments portion is omitted entirely when the arguments field is empty.
  *
@@ -136,7 +136,6 @@ export const SORTABLE_COLUMNS = [
  */
 export function buildCommand(batch, action) {
   const parts = [
-    'sudo',
     './qclient.sh',
     action,
     batch.batchName,
@@ -158,7 +157,7 @@ export function buildCommand(batch, action) {
  * @returns {string}
  */
 export function buildQclientLine(batch, action) {
-  const parts = ['sudo', './qclient.sh', action, batch.batchName, batch.scheduleName];
+  const parts = ['./qclient.sh', action, batch.batchName, batch.scheduleName];
   if (batch.arguments && batch.arguments.trim()) {
     parts.push(`"${batch.arguments.trim()}"`);
   }

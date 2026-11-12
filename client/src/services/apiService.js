@@ -26,8 +26,10 @@ const client = axios.create({
 client.interceptors.response.use(
   (response) => response,
   (error) => {
+    const serverError = error.response?.data?.error;
     const message =
       error.response?.data?.error?.message ||
+      (typeof serverError === 'string' ? serverError : '') ||
       error.response?.data?.message ||
       error.message ||
       'Unknown error';

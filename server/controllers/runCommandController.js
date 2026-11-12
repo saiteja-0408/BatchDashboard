@@ -16,7 +16,7 @@
  *
  * Security:
  *   - Command string is validated against an allowlist pattern before execution.
- *     Only strings matching `sudo ./qclient.sh (runJobOnly|resumeJob) …` with
+ *     Only strings matching `./qclient.sh (runJobOnly|resumeJob) …` with
  *     safe characters are accepted — any other input is rejected with 400.
  *   - SSH credentials come exclusively from environment variables (no hardcoding).
  *   - The SSH connection is always closed after execution (success or failure).
@@ -34,7 +34,7 @@
  *   qclient.sh is a relative path — it only exists in the batch directory.
  *   The client sends the batch's logDir field (e.g. "cd /opt/app/…/batch")
  *   and the server prepends "cd <dir> && " to the executed command so the
- *   shell is in the right directory before sudo ./qclient.sh runs.
+ *   shell is in the right directory before ./qclient.sh runs.
  */
 
 'use strict';
@@ -89,7 +89,7 @@ function getSshConfig() {
  * Validates that `command` matches the expected qclient.sh invocation pattern.
  *
  * Accepted pattern (mirrors buildQclientLine in client/src/utils/constants.js):
- *   sudo ./qclient.sh (runJobOnly|resumeJob) <batchName> <scheduleName> ["<args>"]
+ *   ./qclient.sh (runJobOnly|resumeJob) <batchName> <scheduleName> ["<args>"]
  *
  * All tokens must contain only: word chars, hyphens, dots, forward slashes,
  * equals signs, hashes, spaces, and quoted argument blocks.
@@ -98,8 +98,8 @@ function getSshConfig() {
  * @param {string} command
  */
 function validateCommand(command) {
-  if (!command.startsWith('sudo ./qclient.sh ')) {
-    const err = new Error('Command must start with "sudo ./qclient.sh".');
+  if (!command.startsWith('./qclient.sh ')) {
+    const err = new Error('Command must start with "./qclient.sh".');
     err.status = 400;
     throw err;
   }
@@ -111,7 +111,7 @@ function validateCommand(command) {
     err.status = 400;
     throw err;
   }
-  const actionMatch = command.match(/^sudo \.\/qclient\.sh (\S+)/);
+  const actionMatch = command.match(/^\.\/qclient\.sh (\S+)/);
   if (!actionMatch || !['runJobOnly', 'resumeJob'].includes(actionMatch[1])) {
     const err = new Error('Command action must be "runJobOnly" or "resumeJob".');
     err.status = 400;
@@ -181,7 +181,7 @@ function resolveWorkDir(logDir) {
  * the remote server actually demands it, and it never appears in the shell
  * command string (no process-list exposure).
  *
- * @param {string} sudoCommand  — validated "sudo ./qclient.sh …" string
+ * @param {string} sudoCommand  — validated "./qclient.sh …" string
  * @param {string} password     — LOG_SSH_PASSWORD value
  * @returns {Promise<{ output: string, exitCode: number }>}
  */
@@ -190,13 +190,9 @@ function runSshCommand(sudoCommand, workDir, password) {
 
   // Prepend "cd <workDir> && " so the shell is in the batch directory
   // before ./qclient.sh is invoked (it is a relative path).
-  // Replace the leading "sudo" with "sudo -S -p '<sentinel>'" so sudo
-  // writes a detectable prompt to stderr when it needs a password.
-  const sudoWithFlags = sudoCommand.replace(
-    /^sudo\s+/,
-    `sudo -S -p '${SUDO_PROMPT}' `
-  );
-  const execCmd = `cd ${workDir} && ${sudoWithFlags}`;
+  // sudo is intentionally not used; the SUDO_PROMPT handling below is inert
+  // because no sudo prompt can appear.
+  const execCmd = `cd ${workDir} && ${sudoCommand}`;
 
   return new Promise((resolve, reject) => {
     const conn = new Client();

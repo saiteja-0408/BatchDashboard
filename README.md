@@ -297,7 +297,7 @@ Pass `?force=true` to bypass the 5-minute server cache and force a fresh DB2 que
 Commands follow the exact qclient.sh call pattern:
 ```
 <logDir>
-sudo ./qclient.sh <runJobOnly|resumeJob> <batchName> <scheduleName> ["<arguments>"]
+./qclient.sh <runJobOnly|resumeJob> <batchName> <scheduleName> ["<arguments>"]
 ```
 The arguments portion is omitted entirely when the field is empty.
 
