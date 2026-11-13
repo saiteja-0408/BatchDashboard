@@ -16,7 +16,7 @@
  * No static placeholder text — batch name is always substituted at render time.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box, Typography, Tooltip, IconButton, Stack, Alert, Divider,
@@ -25,6 +25,8 @@ import {
 } from '@mui/material';
 import ContentCopyIcon  from '@mui/icons-material/ContentCopy';
 import CheckIcon        from '@mui/icons-material/Check';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon   from '@mui/icons-material/KeyboardArrowUp';
 import PlayArrowIcon    from '@mui/icons-material/Schedule';  // reuse existing import
 import { buildQclientLine, LOG_PATH_DEFS } from '../../utils/constants';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
@@ -122,11 +124,92 @@ Section.propTypes = {
   children: PropTypes.node.isRequired,
 };
 
+// ── ScrollableOutput ──────────────────────────────────────────────────────────
+
+/**
+ * Scrollable monospace output box with Top / Bottom / Copy All controls, so the
+ * complete command output (including long error traces) can be read in the UI
+ * without opening the remote server in an SSH client.
+ */
+const ScrollableOutput = React.memo(function ScrollableOutput({ content, borderColor }) {
+  const boxRef = useRef(null);
+  const { copy, copied } = useCopyToClipboard();
+
+  const scrollTo = useCallback((toBottom) => {
+    const el = boxRef.current;
+    if (el) el.scrollTo({ top: toBottom ? el.scrollHeight : 0, behavior: 'smooth' });
+  }, []);
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5, flexWrap: 'wrap' }}>
+        <Button
+          size="small"
+          variant="outlined"
+          color="inherit"
+          startIcon={<KeyboardArrowUpIcon fontSize="small" />}
+          onClick={() => scrollTo(false)}
+          sx={{ fontSize: '0.7rem', py: 0.25 }}
+        >
+          Top
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          color="inherit"
+          startIcon={<KeyboardArrowDownIcon fontSize="small" />}
+          onClick={() => scrollTo(true)}
+          sx={{ fontSize: '0.7rem', py: 0.25 }}
+        >
+          Scroll to bottom
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          color="inherit"
+          startIcon={copied ? <CheckIcon fontSize="small" /> : <ContentCopyIcon fontSize="small" />}
+          onClick={() => copy(content)}
+          sx={{ fontSize: '0.7rem', py: 0.25 }}
+        >
+          {copied ? 'Copied' : 'Copy All'}
+        </Button>
+      </Box>
+      <Box
+        ref={boxRef}
+        component="pre"
+        sx={{
+          m: 0,
+          p: 1.25,
+          maxHeight: 320,
+          overflowY: 'auto',
+          fontSize: 'clamp(0.68rem, 1.4vw, 0.78rem)',
+          fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          lineHeight: 1.65,
+          bgcolor: 'background.default',
+          color: 'text.primary',
+          border: '1px solid',
+          borderColor,
+          borderRadius: 1,
+        }}
+      >
+        {content}
+      </Box>
+    </Box>
+  );
+});
+ScrollableOutput.propTypes = {
+  content:     PropTypes.string.isRequired,
+  borderColor: PropTypes.string.isRequired,
+};
+
 // ── RunOutputPanel ────────────────────────────────────────────────────────────
 
 /**
  * Collapsible panel shown below a Run/Resume Command block after execution.
- * Displays success output or an error message.
+ * Displays success output or an error message, each with the full scrollable
+ * command output (stdout + stderr).
  */
 const RunOutputPanel = React.memo(function RunOutputPanel({
   status, output, errMsg, exitCode, onDismiss,
@@ -152,27 +235,7 @@ const RunOutputPanel = React.memo(function RunOutputPanel({
               <Chip label={`exit ${exitCode}`} size="small" color="success" variant="outlined" sx={{ fontSize: '0.68rem' }} />
             )}
           </Box>
-          <Box
-            component="pre"
-            sx={{
-              m: 0,
-              p: 1.25,
-              maxHeight: 320,
-              overflowY: 'auto',
-              fontSize: 'clamp(0.68rem, 1.4vw, 0.78rem)',
-              fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              lineHeight: 1.65,
-              bgcolor: 'background.default',
-              color: 'text.primary',
-              border: '1px solid',
-              borderColor: 'success.light',
-              borderRadius: 1,
-            }}
-          >
-            {output || '(no output)'}
-          </Box>
+          <ScrollableOutput content={output || '(no output)'} borderColor="success.light" />
           <Button
             size="small"
             variant="text"
@@ -188,27 +251,13 @@ const RunOutputPanel = React.memo(function RunOutputPanel({
       <Collapse in={isError}>
         <Alert
           severity="error"
-          sx={{ mt: 1 }}
+          sx={{ mt: 1, '& .MuiAlert-message': { width: '100%', minWidth: 0 } }}
           onClose={onDismiss}
         >
-          <Typography variant="body2" sx={{ fontWeight: 600, mb: output ? 0.5 : 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: output ? 0.75 : 0 }}>
             {errMsg}
           </Typography>
-          {output && (
-            <Box
-              component="pre"
-              sx={{
-                m: 0,
-                mt: 0.5,
-                fontSize: '0.72rem',
-                fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}
-            >
-              {output}
-            </Box>
-          )}
+          {output && <ScrollableOutput content={output} borderColor="error.light" />}
         </Alert>
       </Collapse>
     </>
