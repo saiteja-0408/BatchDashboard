@@ -86,13 +86,27 @@ function getSshConfig() {
 }
 
 /**
+ * Structure of an accepted command (mirrors buildQclientLine in
+ * client/src/utils/constants.js):
+ *   sudo ./qclient.sh <action> <batchName> <scheduleName> ["<args>"]
+ *
+ * - action / batchName / scheduleName: word chars, hyphens, dots, slashes,
+ *   equals signs, hashes, @ — no whitespace, no quotes.
+ * - args: a single double-quoted block.  Inside double quotes the shell treats
+ *   everything literally except  $  `  \  "  (and newlines end the command),
+ *   so the allowlist below permits ordinary report/argument text (commas,
+ *   parentheses, ampersands, colons, plus, percent, single quotes, semicolons,
+ *   pipes, spaces) while excluding every character that could break out of
+ *   the quotes or trigger expansion.
+ */
+const COMMAND_TOKEN = String.raw`[\w.\-/=#@]+`;
+const COMMAND_ARGS  = String.raw`[\w .,\-/=#@:()&+%';|]*`;
+const COMMAND_REGEX = new RegExp(
+  `^sudo \\./qclient\\.sh (\\S+) ${COMMAND_TOKEN} ${COMMAND_TOKEN}(?: "${COMMAND_ARGS}")?$`
+);
+
+/**
  * Validates that `command` matches the expected qclient.sh invocation pattern.
- *
- * Accepted pattern (mirrors buildQclientLine in client/src/utils/constants.js):
- *   sudo ./qclient.sh (runJobOnly|resumeJob) <batchName> <scheduleName> ["<args>"]
- *
- * All tokens must contain only: word chars, hyphens, dots, forward slashes,
- * equals signs, hashes, spaces, and quoted argument blocks.
  * Throws a 400-flagged Error on mismatch (shell-injection guard).
  *
  * @param {string} command
@@ -103,17 +117,18 @@ function validateCommand(command) {
     err.status = 400;
     throw err;
   }
-  if (!/^[\w\s./\-=\#"@]+$/.test(command)) {
-    const err = new Error(
-      'Command contains unsafe characters. Only alphanumeric characters, ' +
-      'hyphens, dots, slashes, equals, hashes, spaces, and double quotes are allowed.'
-    );
-    err.status = 400;
-    throw err;
-  }
   const actionMatch = command.match(/^sudo \.\/qclient\.sh (\S+)/);
   if (!actionMatch || !['runJobOnly', 'resumeJob'].includes(actionMatch[1])) {
     const err = new Error('Command action must be "runJobOnly" or "resumeJob".');
+    err.status = 400;
+    throw err;
+  }
+  if (!COMMAND_REGEX.test(command)) {
+    const err = new Error(
+      'Command contains unsafe characters or an invalid structure. Batch and schedule names ' +
+      'allow only alphanumerics, hyphens, dots, slashes, equals, hashes and @. The quoted ' +
+      'arguments block must not contain $, backticks, backslashes or double quotes.'
+    );
     err.status = 400;
     throw err;
   }
